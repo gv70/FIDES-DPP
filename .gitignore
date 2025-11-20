@@ -1,0 +1,80 @@
+# FIDES-DPP Project .gitignore
+
+# Reference/Development Folders (keep local, don't push to GitHub)
+test_contract/
+spec-untp-main-data-models/
+spec-untp-main-website-docs/
+spec-untp-*/
+
+# Standards and Reference Documents (keep local)
+List of Standards*.xlsx
+List of Standards*.xlsx.md
+List of Standards*.md
+*Standards*.xlsx
+*Standards*.xlsx.md
+
+# Summary and Analysis Files (keep local, don't push to GitHub)
+dpp_contract/ACCESS_CONTROL_ANALYSIS.md
+dpp_contract/AUTHORITY_FIX_SUMMARY.md
+dpp_contract/DESIGN_FIX_OWNERSHIP.md
+dpp_contract/HUMANIZATION_SUMMARY.md
+dpp_contract/MIGRATION_SUMMARY.md
+dpp_contract/MILESTONE_SCOPE_ANALYSIS.md
+dpp_contract/MILESTONE1_SCOPE.md
+dpp_contract/V0.1_SUMMARY.md
+
+# Backup files (internal development)
+dpp_contract/lib_FULL_AUTHORITY_BACKUP.rs
+dpp_contract/lib_FULL_AUTHORITY_COMPLETE.rs
+dpp_contract/lib_full_authority_v1.rs
+
+# Test scripts and data (local only)
+dpp_contract/TEST_READONLY.sh
+dpp_contract/TEST_DATA.json
+
+# Extra documentation files (keep local, don't push to GitHub)
+dpp_contract/AUTHORITY_EXAMPLES.sh
+dpp_contract/AUTHORITY_MODEL.md
+dpp_contract/CODE_EXPLANATION.md
+dpp_contract/DELIVERY_CHECKLIST.md
+dpp_contract/DPP_GUIDE.md
+dpp_contract/ERROR_TYPES_EXPLANATION.md
+dpp_contract/LOCAL_FILES_README.md
+dpp_contract/MILESTONE_1.md
+dpp_contract/STANDARDS_MAPPING.md
+dpp_contract/TESTING_GUIDE.md
+
+# Root level extra docs
+TESTING.md
+my_contract/
+
+# Optional build/config files (exclude to keep repo minimal)
+Dockerfile
+Makefile
+.dockerignore
+.rustfmt.toml
+.cursor/
+
+# Docs (keep roadmap, ignore others)
+docs/*
+!docs/ROADMAP.md
+
+# Contract address file (environment-specific, not versioned)
+dpp_contract/.fides_dpp_contract
+
+# Rust build artifacts
+**/target/
+**/*.rs.bk
+**/Cargo.lock
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
