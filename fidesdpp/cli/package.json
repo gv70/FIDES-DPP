@@ -1,0 +1,36 @@
+{
+  "name": "@fides-dpp/cli",
+  "version": "0.1.0",
+  "description": "Command-line interface for FIDES Digital Product Passport",
+  "main": "dist/index.js",
+  "bin": {
+    "dpp-cli": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "NODE_PATH=../node_modules:$NODE_PATH tsx src/index.ts",
+    "start": "node dist/index.js",
+    "cli": "NODE_PATH=../node_modules:$NODE_PATH tsx src/index.ts"
+  },
+  "keywords": [
+    "digital-product-passport",
+    "dpp",
+    "untp",
+    "ipfs",
+    "polkadot",
+    "web3"
+  ],
+  "author": "FIDES-DPP",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "commander": "^12.0.0",
+    "dotenv": "^16.4.0",
+    "@polkadot/api": "^16.5.4",
+    "@polkadot/util-crypto": "^14.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

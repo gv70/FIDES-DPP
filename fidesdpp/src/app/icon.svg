@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="FIDES-DPP">
+  <rect width="64" height="64" rx="12" fill="#0A6ED1" />
+  <path
+    d="M20 20h24v6H26v6h16v6H26v12h-6V20Z"
+    fill="#FFFFFF"
+  />
+</svg>
+

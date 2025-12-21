@@ -1,0 +1,3186 @@
+{
+  "source": {
+    "hash": "0xf7ca5dee7ffa5615f672a7b89d056fdbbfc19be29686784a00d67235242e6e29",
+    "language": "ink! 6.0.0-beta",
+    "compiler": "rustc 1.91.0",
+    "build_info": {
+      "build_mode": "Release",
+      "cargo_contract_version": "6.0.0-beta",
+      "rust_toolchain": "stable-aarch64-apple-darwin"
+    }
+  },
+  "contract": {
+    "name": "dpp_contract",
+    "version": "6.0.0",
+    "authors": [
+      "FIDES-DPP"
+    ]
+  },
+  "image": null,
+  "spec": {
+    "constructors": [
+      {
+        "args": [],
+        "default": false,
+        "docs": [
+          "Constructor - initializes with token_id counter at 0"
+        ],
+        "label": "new",
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink_primitives",
+            "ConstructorResult"
+          ],
+          "type": 38
+        },
+        "selector": "0x9bae9d5e"
+      }
+    ],
+    "docs": [],
+    "environment": {
+      "accountId": {
+        "displayName": [
+          "AccountId"
+        ],
+        "type": 59
+      },
+      "balance": {
+        "displayName": [
+          "Balance"
+        ],
+        "type": 0
+      },
+      "blockNumber": {
+        "displayName": [
+          "BlockNumber"
+        ],
+        "type": 5
+      },
+      "hash": {
+        "displayName": [
+          "Hash"
+        ],
+        "type": 60
+      },
+      "nativeToEthRatio": 100000000,
+      "staticBufferSize": 16384,
+      "timestamp": {
+        "displayName": [
+          "Timestamp"
+        ],
+        "type": 61
+      }
+    },
+    "events": [
+      {
+        "args": [
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "owner",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 1
+            }
+          },
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "operator",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 1
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "approved",
+            "type": {
+              "displayName": [
+                "bool"
+              ],
+              "type": 52
+            }
+          }
+        ],
+        "docs": [],
+        "label": "ApprovalForAll",
+        "module_path": "dpp_contract::dpp_contract_v2",
+        "signature_topic": "0xc488ece6da933c3137b43557ffeb77ffe7b5b394f6bc3c8ca08a715e8161ba08"
+      },
+      {
+        "args": [
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          },
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "issuer",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 1
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "reason",
+            "type": {
+              "displayName": [
+                "Option"
+              ],
+              "type": 47
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "revoked_at",
+            "type": {
+              "displayName": [
+                "u32"
+              ],
+              "type": 5
+            }
+          }
+        ],
+        "docs": [
+          "Emitted when a passport is revoked"
+        ],
+        "label": "PassportRevoked",
+        "module_path": "dpp_contract::dpp_contract_v2",
+        "signature_topic": "0xf7906e062b57fafeff7e418f0d12d75d796e12a4245bc28f0ee1aaf7eb63a734"
+      },
+      {
+        "args": [
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "dataset_uri",
+            "type": {
+              "displayName": [
+                "String"
+              ],
+              "type": 4
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "payload_hash",
+            "type": {
+              "displayName": [],
+              "type": 8
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "dataset_type",
+            "type": {
+              "displayName": [
+                "String"
+              ],
+              "type": 4
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "version",
+            "type": {
+              "displayName": [
+                "u32"
+              ],
+              "type": 5
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "updated_at",
+            "type": {
+              "displayName": [
+                "u32"
+              ],
+              "type": 5
+            }
+          }
+        ],
+        "docs": [
+          "Emitted when a passport dataset is updated"
+        ],
+        "label": "PassportUpdated",
+        "module_path": "dpp_contract::dpp_contract_v2",
+        "signature_topic": "0x6b84c60328a4703cca206201d7954757e61aecfd339c2dfc68fa20f9788ac3cb"
+      },
+      {
+        "args": [
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          },
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "issuer",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 1
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "dataset_uri",
+            "type": {
+              "displayName": [
+                "String"
+              ],
+              "type": 4
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "payload_hash",
+            "type": {
+              "displayName": [],
+              "type": 8
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "dataset_type",
+            "type": {
+              "displayName": [
+                "String"
+              ],
+              "type": 4
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "version",
+            "type": {
+              "displayName": [
+                "u32"
+              ],
+              "type": 5
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "created_at",
+            "type": {
+              "displayName": [
+                "u32"
+              ],
+              "type": 5
+            }
+          }
+        ],
+        "docs": [
+          "Emitted when a passport is registered"
+        ],
+        "label": "PassportRegistered",
+        "module_path": "dpp_contract::dpp_contract_v2",
+        "signature_topic": "0x1de07e2d1f5e26a1c0fe34457603636fd7c9c5ba8ed7adbcc892e7d7019bfd34"
+      },
+      {
+        "args": [
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "owner",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 1
+            }
+          },
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "approved",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 1
+            }
+          },
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          }
+        ],
+        "docs": [],
+        "label": "Approval",
+        "module_path": "dpp_contract::dpp_contract_v2",
+        "signature_topic": "0x18976d1495864ef3c652321f4c12058ac3186089256e4c7612d1e9351460feb2"
+      },
+      {
+        "args": [
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "from",
+            "type": {
+              "displayName": [
+                "Option"
+              ],
+              "type": 50
+            }
+          },
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "to",
+            "type": {
+              "displayName": [
+                "Option"
+              ],
+              "type": 50
+            }
+          },
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          }
+        ],
+        "docs": [],
+        "label": "Transfer",
+        "module_path": "dpp_contract::dpp_contract_v2",
+        "signature_topic": "0x24124e2f9acaccf560137183915cd8b1b855438468a7b5efafe8866beaef243e"
+      }
+    ],
+    "lang_error": {
+      "displayName": [
+        "ink",
+        "LangError"
+      ],
+      "type": 39
+    },
+    "messages": [
+      {
+        "args": [
+          {
+            "label": "dataset_uri",
+            "type": {
+              "displayName": [
+                "String"
+              ],
+              "type": 4
+            }
+          },
+          {
+            "label": "payload_hash",
+            "type": {
+              "displayName": [],
+              "type": 8
+            }
+          },
+          {
+            "label": "dataset_type",
+            "type": {
+              "displayName": [
+                "String"
+              ],
+              "type": 4
+            }
+          },
+          {
+            "label": "granularity",
+            "type": {
+              "displayName": [
+                "Granularity"
+              ],
+              "type": 10
+            }
+          },
+          {
+            "label": "subject_id_hash",
+            "type": {
+              "displayName": [
+                "Option"
+              ],
+              "type": 11
+            }
+          }
+        ],
+        "default": false,
+        "docs": [
+          " Register a new passport",
+          "",
+          " Creates a new passport record with the provided anchor data.",
+          "",
+          " # Arguments",
+          "",
+          " * `dataset_uri` - IPFS URI (e.g., \"ipfs://bafkrei...\")",
+          " * `payload_hash` - SHA-256 hash of the JWT string",
+          " * `dataset_type` - MIME type (e.g., \"application/vc+jwt\")",
+          " * `granularity` - Granularity level (ProductClass, Batch, or Item)",
+          " * `subject_id_hash` - Optional hashed canonical subject identifier",
+          "",
+          " # Returns",
+          "",
+          " Token ID of the newly registered passport",
+          "",
+          " # Errors",
+          "",
+          " * `InvalidInput` - Empty dataset_uri or dataset_type"
+        ],
+        "label": "register_passport",
+        "mutates": true,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 40
+        },
+        "selector": "0x50bc73be"
+      },
+      {
+        "args": [
+          {
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          }
+        ],
+        "default": false,
+        "docs": [
+          " Get passport record by token ID",
+          "",
+          " # Arguments",
+          "",
+          " * `token_id` - Token ID to retrieve",
+          "",
+          " # Returns",
+          "",
+          " PassportRecord if found, None otherwise"
+        ],
+        "label": "get_passport",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 43
+        },
+        "selector": "0x0ea9786c"
+      },
+      {
+        "args": [
+          {
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          },
+          {
+            "label": "dataset_uri",
+            "type": {
+              "displayName": [
+                "String"
+              ],
+              "type": 4
+            }
+          },
+          {
+            "label": "payload_hash",
+            "type": {
+              "displayName": [],
+              "type": 8
+            }
+          },
+          {
+            "label": "dataset_type",
+            "type": {
+              "displayName": [
+                "String"
+              ],
+              "type": 4
+            }
+          },
+          {
+            "label": "subject_id_hash",
+            "type": {
+              "displayName": [
+                "Option"
+              ],
+              "type": 11
+            }
+          }
+        ],
+        "default": false,
+        "docs": [
+          " Update dataset (new version on IPFS)",
+          "",
+          " Updates the IPFS reference and increments version.",
+          " Only the original issuer can call this.",
+          "",
+          " # Arguments",
+          "",
+          " * `token_id` - Token ID to update",
+          " * `dataset_uri` - New IPFS URI",
+          " * `payload_hash` - New SHA-256 hash",
+          " * `dataset_type` - New MIME type",
+          " * `subject_id_hash` - New optional subject ID hash",
+          "",
+          " # Notes",
+          "",
+          " Granularity is IMMUTABLE after registration. If you need to change",
+          " granularity, revoke the old passport and register a new one.",
+          "",
+          " # Errors",
+          "",
+          " * `TokenNotFound` - Token ID doesn't exist",
+          " * `Unauthorized` - Caller is not the issuer",
+          " * `PassportRevoked` - Cannot update revoked passport",
+          " * `InvalidInput` - Empty dataset_uri or dataset_type"
+        ],
+        "label": "update_dataset",
+        "mutates": true,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 45
+        },
+        "selector": "0x25a2795e"
+      },
+      {
+        "args": [
+          {
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          },
+          {
+            "label": "reason",
+            "type": {
+              "displayName": [
+                "Option"
+              ],
+              "type": 47
+            }
+          }
+        ],
+        "default": false,
+        "docs": [
+          " Revoke a passport (irreversible)",
+          "",
+          " Sets status to Revoked. Cannot be undone.",
+          " Only the original issuer can call this.",
+          "",
+          " # Arguments",
+          "",
+          " * `token_id` - Token ID to revoke",
+          " * `reason` - Optional revocation reason (stored in event only)",
+          "",
+          " # Errors",
+          "",
+          " * `TokenNotFound` - Token ID doesn't exist",
+          " * `Unauthorized` - Caller is not the issuer",
+          " * `AlreadyRevoked` - Passport is already revoked"
+        ],
+        "label": "revoke_passport",
+        "mutates": true,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 45
+        },
+        "selector": "0xa4cec762"
+      },
+      {
+        "args": [
+          {
+            "label": "owner",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 1
+            }
+          }
+        ],
+        "default": false,
+        "docs": [],
+        "label": "balance_of",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 48
+        },
+        "selector": "0x0f755a56"
+      },
+      {
+        "args": [
+          {
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          }
+        ],
+        "default": false,
+        "docs": [],
+        "label": "owner_of",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 49
+        },
+        "selector": "0x99720c1e"
+      },
+      {
+        "args": [
+          {
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          }
+        ],
+        "default": false,
+        "docs": [],
+        "label": "get_approved",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 49
+        },
+        "selector": "0x27592dea"
+      },
+      {
+        "args": [
+          {
+            "label": "owner",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 1
+            }
+          },
+          {
+            "label": "operator",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 1
+            }
+          }
+        ],
+        "default": false,
+        "docs": [],
+        "label": "is_approved_for_all",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 51
+        },
+        "selector": "0x0f5922e9"
+      },
+      {
+        "args": [
+          {
+            "label": "to",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 1
+            }
+          },
+          {
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          }
+        ],
+        "default": false,
+        "docs": [],
+        "label": "approve",
+        "mutates": true,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 45
+        },
+        "selector": "0x681266a0"
+      },
+      {
+        "args": [
+          {
+            "label": "operator",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 1
+            }
+          },
+          {
+            "label": "approved",
+            "type": {
+              "displayName": [
+                "bool"
+              ],
+              "type": 52
+            }
+          }
+        ],
+        "default": false,
+        "docs": [],
+        "label": "set_approval_for_all",
+        "mutates": true,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 45
+        },
+        "selector": "0xcfd0c27b"
+      },
+      {
+        "args": [
+          {
+            "label": "to",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 1
+            }
+          },
+          {
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          }
+        ],
+        "default": false,
+        "docs": [],
+        "label": "transfer",
+        "mutates": true,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 45
+        },
+        "selector": "0x84a15da1"
+      },
+      {
+        "args": [
+          {
+            "label": "from",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 1
+            }
+          },
+          {
+            "label": "to",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 1
+            }
+          },
+          {
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          }
+        ],
+        "default": false,
+        "docs": [],
+        "label": "transfer_from",
+        "mutates": true,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 45
+        },
+        "selector": "0x0b396f18"
+      },
+      {
+        "args": [],
+        "default": false,
+        "docs": [
+          " Get next token ID (for informational purposes)"
+        ],
+        "label": "next_token_id",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 48
+        },
+        "selector": "0x4bb70b15"
+      },
+      {
+        "args": [
+          {
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          },
+          {
+            "label": "version",
+            "type": {
+              "displayName": [
+                "u32"
+              ],
+              "type": 5
+            }
+          }
+        ],
+        "default": false,
+        "docs": [
+          " Get specific version from history",
+          "",
+          " # Arguments",
+          "",
+          " * `token_id` - Token ID",
+          " * `version` - Version number (1-indexed)",
+          "",
+          " # Returns",
+          "",
+          " VersionHistory if found, None otherwise",
+          "",
+          " # Example",
+          "",
+          " ```ignore",
+          " let v1 = contract.get_version(token_id, 1);  // Get original version",
+          " let v2 = contract.get_version(token_id, 2);  // Get second version",
+          " ```"
+        ],
+        "label": "get_version",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 53
+        },
+        "selector": "0x0c1a1d77"
+      },
+      {
+        "args": [
+          {
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          }
+        ],
+        "default": false,
+        "docs": [
+          " Get all version history for a passport",
+          "",
+          " Returns a vector of all versions in ascending order (v1, v2, v3, ...).",
+          "",
+          " # Arguments",
+          "",
+          " * `token_id` - Token ID",
+          "",
+          " # Returns",
+          "",
+          " Vector of VersionHistory entries (empty if token doesn't exist or has no history)",
+          "",
+          " # Note",
+          "",
+          " This iterates from version 1 up to the current version.",
+          " For passports with many versions, consider using get_version() for specific versions."
+        ],
+        "label": "get_version_history",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 55
+        },
+        "selector": "0x88721cad"
+      },
+      {
+        "args": [
+          {
+            "label": "token_id",
+            "type": {
+              "displayName": [
+                "u128"
+              ],
+              "type": 0
+            }
+          },
+          {
+            "label": "limit",
+            "type": {
+              "displayName": [
+                "u32"
+              ],
+              "type": 5
+            }
+          }
+        ],
+        "default": false,
+        "docs": [
+          " Get the latest N versions",
+          "",
+          " Useful for displaying recent history without loading all versions.",
+          "",
+          " # Arguments",
+          "",
+          " * `token_id` - Token ID",
+          " * `limit` - Maximum number of versions to return",
+          "",
+          " # Returns",
+          "",
+          " Vector of the most recent versions, in descending order (newest first)"
+        ],
+        "label": "get_recent_versions",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 55
+        },
+        "selector": "0x579643a3"
+      },
+      {
+        "args": [
+          {
+            "label": "subject_id_hash",
+            "type": {
+              "displayName": [],
+              "type": 8
+            }
+          }
+        ],
+        "default": false,
+        "docs": [
+          " Find token ID by subject identifier hash",
+          "",
+          " Enables lookup of passport by product identifier (hashed).",
+          " The caller must compute the hash off-chain using the same algorithm:",
+          " - ProductClass: SHA-256(productId)",
+          " - Batch: SHA-256(productId + \"#\" + batchNumber)",
+          " - Item: SHA-256(productId + \"#\" + serialNumber)",
+          "",
+          " # Arguments",
+          "",
+          " * `subject_id_hash` - SHA-256 hash of the canonical subject identifier",
+          "",
+          " # Returns",
+          "",
+          " Token ID if found, None otherwise",
+          "",
+          " # Example",
+          "",
+          " ```ignore",
+          " // Off-chain: Compute hash",
+          " let hash = sha256(\"GTIN-123#LOT-2024-001\");  // Batch granularity",
+          "",
+          " // On-chain: Lookup token ID",
+          " let token_id = contract.find_token_by_subject_id(hash);",
+          " ```"
+        ],
+        "label": "find_token_by_subject_id",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 57
+        },
+        "selector": "0xb80b21f1"
+      }
+    ]
+  },
+  "storage": {
+    "root": {
+      "layout": {
+        "struct": {
+          "fields": [
+            {
+              "layout": {
+                "root": {
+                  "layout": {
+                    "struct": {
+                      "fields": [
+                        {
+                          "layout": {
+                            "leaf": {
+                              "key": "0x53787e7c",
+                              "ty": 0
+                            }
+                          },
+                          "name": "token_id"
+                        },
+                        {
+                          "layout": {
+                            "leaf": {
+                              "key": "0x53787e7c",
+                              "ty": 1
+                            }
+                          },
+                          "name": "issuer"
+                        },
+                        {
+                          "layout": {
+                            "leaf": {
+                              "key": "0x53787e7c",
+                              "ty": 4
+                            }
+                          },
+                          "name": "dataset_uri"
+                        },
+                        {
+                          "layout": {
+                            "array": {
+                              "layout": {
+                                "leaf": {
+                                  "key": "0x53787e7c",
+                                  "ty": 3
+                                }
+                              },
+                              "len": 32,
+                              "offset": "0x53787e7c"
+                            }
+                          },
+                          "name": "payload_hash"
+                        },
+                        {
+                          "layout": {
+                            "leaf": {
+                              "key": "0x53787e7c",
+                              "ty": 4
+                            }
+                          },
+                          "name": "dataset_type"
+                        },
+                        {
+                          "layout": {
+                            "leaf": {
+                              "key": "0x53787e7c",
+                              "ty": 5
+                            }
+                          },
+                          "name": "version"
+                        },
+                        {
+                          "layout": {
+                            "enum": {
+                              "dispatchKey": "0x53787e7c",
+                              "name": "PassportStatus",
+                              "variants": {
+                                "0": {
+                                  "fields": [],
+                                  "name": "Draft"
+                                },
+                                "1": {
+                                  "fields": [],
+                                  "name": "Active"
+                                },
+                                "2": {
+                                  "fields": [],
+                                  "name": "Suspended"
+                                },
+                                "3": {
+                                  "fields": [],
+                                  "name": "Revoked"
+                                },
+                                "4": {
+                                  "fields": [],
+                                  "name": "Archived"
+                                }
+                              }
+                            }
+                          },
+                          "name": "status"
+                        },
+                        {
+                          "layout": {
+                            "leaf": {
+                              "key": "0x53787e7c",
+                              "ty": 5
+                            }
+                          },
+                          "name": "created_at"
+                        },
+                        {
+                          "layout": {
+                            "leaf": {
+                              "key": "0x53787e7c",
+                              "ty": 5
+                            }
+                          },
+                          "name": "updated_at"
+                        },
+                        {
+                          "layout": {
+                            "enum": {
+                              "dispatchKey": "0x53787e7c",
+                              "name": "Granularity",
+                              "variants": {
+                                "0": {
+                                  "fields": [],
+                                  "name": "ProductClass"
+                                },
+                                "1": {
+                                  "fields": [],
+                                  "name": "Batch"
+                                },
+                                "2": {
+                                  "fields": [],
+                                  "name": "Item"
+                                }
+                              }
+                            }
+                          },
+                          "name": "granularity"
+                        },
+                        {
+                          "layout": {
+                            "enum": {
+                              "dispatchKey": "0x53787e7c",
+                              "name": "Option",
+                              "variants": {
+                                "0": {
+                                  "fields": [],
+                                  "name": "None"
+                                },
+                                "1": {
+                                  "fields": [
+                                    {
+                                      "layout": {
+                                        "array": {
+                                          "layout": {
+                                            "leaf": {
+                                              "key": "0x53787e7c",
+                                              "ty": 3
+                                            }
+                                          },
+                                          "len": 32,
+                                          "offset": "0x53787e7c"
+                                        }
+                                      },
+                                      "name": "0"
+                                    }
+                                  ],
+                                  "name": "Some"
+                                }
+                              }
+                            }
+                          },
+                          "name": "subject_id_hash"
+                        }
+                      ],
+                      "name": "PassportRecord"
+                    }
+                  },
+                  "root_key": "0x53787e7c",
+                  "ty": 6
+                }
+              },
+              "name": "passports"
+            },
+            {
+              "layout": {
+                "leaf": {
+                  "key": "0x00000000",
+                  "ty": 0
+                }
+              },
+              "name": "next_token_id"
+            },
+            {
+              "layout": {
+                "root": {
+                  "layout": {
+                    "struct": {
+                      "fields": [
+                        {
+                          "layout": {
+                            "leaf": {
+                              "key": "0xf9e12b7b",
+                              "ty": 5
+                            }
+                          },
+                          "name": "version"
+                        },
+                        {
+                          "layout": {
+                            "leaf": {
+                              "key": "0xf9e12b7b",
+                              "ty": 4
+                            }
+                          },
+                          "name": "dataset_uri"
+                        },
+                        {
+                          "layout": {
+                            "array": {
+                              "layout": {
+                                "leaf": {
+                                  "key": "0xf9e12b7b",
+                                  "ty": 3
+                                }
+                              },
+                              "len": 32,
+                              "offset": "0xf9e12b7b"
+                            }
+                          },
+                          "name": "payload_hash"
+                        },
+                        {
+                          "layout": {
+                            "leaf": {
+                              "key": "0xf9e12b7b",
+                              "ty": 4
+                            }
+                          },
+                          "name": "dataset_type"
+                        },
+                        {
+                          "layout": {
+                            "leaf": {
+                              "key": "0xf9e12b7b",
+                              "ty": 5
+                            }
+                          },
+                          "name": "updated_at"
+                        },
+                        {
+                          "layout": {
+                            "leaf": {
+                              "key": "0xf9e12b7b",
+                              "ty": 1
+                            }
+                          },
+                          "name": "updated_by"
+                        }
+                      ],
+                      "name": "VersionHistory"
+                    }
+                  },
+                  "root_key": "0xf9e12b7b",
+                  "ty": 16
+                }
+              },
+              "name": "version_history"
+            },
+            {
+              "layout": {
+                "root": {
+                  "layout": {
+                    "leaf": {
+                      "key": "0x5cdd90c0",
+                      "ty": 0
+                    }
+                  },
+                  "root_key": "0x5cdd90c0",
+                  "ty": 21
+                }
+              },
+              "name": "subject_id_to_token"
+            },
+            {
+              "layout": {
+                "root": {
+                  "layout": {
+                    "leaf": {
+                      "key": "0x8505ed06",
+                      "ty": 1
+                    }
+                  },
+                  "root_key": "0x8505ed06",
+                  "ty": 24
+                }
+              },
+              "name": "token_owner"
+            },
+            {
+              "layout": {
+                "root": {
+                  "layout": {
+                    "leaf": {
+                      "key": "0xed30f05e",
+                      "ty": 1
+                    }
+                  },
+                  "root_key": "0xed30f05e",
+                  "ty": 27
+                }
+              },
+              "name": "token_approvals"
+            },
+            {
+              "layout": {
+                "root": {
+                  "layout": {
+                    "leaf": {
+                      "key": "0xc8007ed9",
+                      "ty": 0
+                    }
+                  },
+                  "root_key": "0xc8007ed9",
+                  "ty": 30
+                }
+              },
+              "name": "owned_tokens_count"
+            },
+            {
+              "layout": {
+                "root": {
+                  "layout": {
+                    "leaf": {
+                      "key": "0xe2955890",
+                      "ty": 15
+                    }
+                  },
+                  "root_key": "0xe2955890",
+                  "ty": 33
+                }
+              },
+              "name": "operator_approvals"
+            }
+          ],
+          "name": "DppContractV2"
+        }
+      },
+      "root_key": "0x00000000",
+      "ty": 37
+    }
+  },
+  "types": [
+    {
+      "id": 0,
+      "type": {
+        "def": {
+          "primitive": "u128"
+        }
+      }
+    },
+    {
+      "id": 1,
+      "type": {
+        "def": {
+          "composite": {
+            "fields": [
+              {
+                "type": 2,
+                "typeName": "[u8; 20]"
+              }
+            ]
+          }
+        },
+        "path": [
+          "primitive_types",
+          "H160"
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "type": {
+        "def": {
+          "array": {
+            "len": 20,
+            "type": 3
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": {
+        "def": {
+          "primitive": "u8"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": {
+        "def": {
+          "primitive": "str"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": {
+        "def": {
+          "primitive": "u32"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "K",
+            "type": 0
+          },
+          {
+            "name": "V",
+            "type": 7
+          },
+          {
+            "name": "KeyType",
+            "type": 12
+          }
+        ],
+        "path": [
+          "ink_storage",
+          "lazy",
+          "mapping",
+          "Mapping"
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": {
+        "def": {
+          "composite": {
+            "fields": [
+              {
+                "name": "token_id",
+                "type": 0,
+                "typeName": "u128"
+              },
+              {
+                "name": "issuer",
+                "type": 1,
+                "typeName": "Address"
+              },
+              {
+                "name": "dataset_uri",
+                "type": 4,
+                "typeName": "String"
+              },
+              {
+                "name": "payload_hash",
+                "type": 8,
+                "typeName": "[u8; 32]"
+              },
+              {
+                "name": "dataset_type",
+                "type": 4,
+                "typeName": "String"
+              },
+              {
+                "name": "version",
+                "type": 5,
+                "typeName": "u32"
+              },
+              {
+                "name": "status",
+                "type": 9,
+                "typeName": "PassportStatus"
+              },
+              {
+                "name": "created_at",
+                "type": 5,
+                "typeName": "u32"
+              },
+              {
+                "name": "updated_at",
+                "type": 5,
+                "typeName": "u32"
+              },
+              {
+                "name": "granularity",
+                "type": 10,
+                "typeName": "Granularity"
+              },
+              {
+                "name": "subject_id_hash",
+                "type": 11,
+                "typeName": "Option<[u8; 32]>"
+              }
+            ]
+          }
+        },
+        "path": [
+          "dpp_contract",
+          "dpp_contract_v2",
+          "PassportRecord"
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": {
+        "def": {
+          "array": {
+            "len": 32,
+            "type": 3
+          }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "index": 0,
+                "name": "Draft"
+              },
+              {
+                "index": 1,
+                "name": "Active"
+              },
+              {
+                "index": 2,
+                "name": "Suspended"
+              },
+              {
+                "index": 3,
+                "name": "Revoked"
+              },
+              {
+                "index": 4,
+                "name": "Archived"
+              }
+            ]
+          }
+        },
+        "path": [
+          "dpp_contract",
+          "dpp_contract_v2",
+          "PassportStatus"
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "index": 0,
+                "name": "ProductClass"
+              },
+              {
+                "index": 1,
+                "name": "Batch"
+              },
+              {
+                "index": 2,
+                "name": "Item"
+              }
+            ]
+          }
+        },
+        "path": [
+          "dpp_contract",
+          "dpp_contract_v2",
+          "Granularity"
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "index": 0,
+                "name": "None"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 8
+                  }
+                ],
+                "index": 1,
+                "name": "Some"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 8
+          }
+        ],
+        "path": [
+          "Option"
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "L",
+            "type": 13
+          },
+          {
+            "name": "R",
+            "type": 14
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ResolverKey"
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "AutoKey"
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "ParentKey",
+            "type": 15
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ManualKey"
+        ]
+      }
+    },
+    {
+      "id": 15,
+      "type": {
+        "def": {
+          "tuple": []
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "K",
+            "type": 17
+          },
+          {
+            "name": "V",
+            "type": 18
+          },
+          {
+            "name": "KeyType",
+            "type": 19
+          }
+        ],
+        "path": [
+          "ink_storage",
+          "lazy",
+          "mapping",
+          "Mapping"
+        ]
+      }
+    },
+    {
+      "id": 17,
+      "type": {
+        "def": {
+          "tuple": [
+            0,
+            5
+          ]
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": {
+        "def": {
+          "composite": {
+            "fields": [
+              {
+                "name": "version",
+                "type": 5,
+                "typeName": "u32"
+              },
+              {
+                "name": "dataset_uri",
+                "type": 4,
+                "typeName": "String"
+              },
+              {
+                "name": "payload_hash",
+                "type": 8,
+                "typeName": "[u8; 32]"
+              },
+              {
+                "name": "dataset_type",
+                "type": 4,
+                "typeName": "String"
+              },
+              {
+                "name": "updated_at",
+                "type": 5,
+                "typeName": "u32"
+              },
+              {
+                "name": "updated_by",
+                "type": 1,
+                "typeName": "Address"
+              }
+            ]
+          }
+        },
+        "path": [
+          "dpp_contract",
+          "dpp_contract_v2",
+          "VersionHistory"
+        ]
+      }
+    },
+    {
+      "id": 19,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "L",
+            "type": 13
+          },
+          {
+            "name": "R",
+            "type": 20
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ResolverKey"
+        ]
+      }
+    },
+    {
+      "id": 20,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "ParentKey",
+            "type": 15
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ManualKey"
+        ]
+      }
+    },
+    {
+      "id": 21,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "K",
+            "type": 8
+          },
+          {
+            "name": "V",
+            "type": 0
+          },
+          {
+            "name": "KeyType",
+            "type": 22
+          }
+        ],
+        "path": [
+          "ink_storage",
+          "lazy",
+          "mapping",
+          "Mapping"
+        ]
+      }
+    },
+    {
+      "id": 22,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "L",
+            "type": 13
+          },
+          {
+            "name": "R",
+            "type": 23
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ResolverKey"
+        ]
+      }
+    },
+    {
+      "id": 23,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "ParentKey",
+            "type": 15
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ManualKey"
+        ]
+      }
+    },
+    {
+      "id": 24,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "K",
+            "type": 0
+          },
+          {
+            "name": "V",
+            "type": 1
+          },
+          {
+            "name": "KeyType",
+            "type": 25
+          }
+        ],
+        "path": [
+          "ink_storage",
+          "lazy",
+          "mapping",
+          "Mapping"
+        ]
+      }
+    },
+    {
+      "id": 25,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "L",
+            "type": 13
+          },
+          {
+            "name": "R",
+            "type": 26
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ResolverKey"
+        ]
+      }
+    },
+    {
+      "id": 26,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "ParentKey",
+            "type": 15
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ManualKey"
+        ]
+      }
+    },
+    {
+      "id": 27,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "K",
+            "type": 0
+          },
+          {
+            "name": "V",
+            "type": 1
+          },
+          {
+            "name": "KeyType",
+            "type": 28
+          }
+        ],
+        "path": [
+          "ink_storage",
+          "lazy",
+          "mapping",
+          "Mapping"
+        ]
+      }
+    },
+    {
+      "id": 28,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "L",
+            "type": 13
+          },
+          {
+            "name": "R",
+            "type": 29
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ResolverKey"
+        ]
+      }
+    },
+    {
+      "id": 29,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "ParentKey",
+            "type": 15
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ManualKey"
+        ]
+      }
+    },
+    {
+      "id": 30,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "K",
+            "type": 1
+          },
+          {
+            "name": "V",
+            "type": 0
+          },
+          {
+            "name": "KeyType",
+            "type": 31
+          }
+        ],
+        "path": [
+          "ink_storage",
+          "lazy",
+          "mapping",
+          "Mapping"
+        ]
+      }
+    },
+    {
+      "id": 31,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "L",
+            "type": 13
+          },
+          {
+            "name": "R",
+            "type": 32
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ResolverKey"
+        ]
+      }
+    },
+    {
+      "id": 32,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "ParentKey",
+            "type": 15
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ManualKey"
+        ]
+      }
+    },
+    {
+      "id": 33,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "K",
+            "type": 34
+          },
+          {
+            "name": "V",
+            "type": 15
+          },
+          {
+            "name": "KeyType",
+            "type": 35
+          }
+        ],
+        "path": [
+          "ink_storage",
+          "lazy",
+          "mapping",
+          "Mapping"
+        ]
+      }
+    },
+    {
+      "id": 34,
+      "type": {
+        "def": {
+          "tuple": [
+            1,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "id": 35,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "L",
+            "type": 13
+          },
+          {
+            "name": "R",
+            "type": 36
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ResolverKey"
+        ]
+      }
+    },
+    {
+      "id": 36,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "ParentKey",
+            "type": 15
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ManualKey"
+        ]
+      }
+    },
+    {
+      "id": 37,
+      "type": {
+        "def": {
+          "composite": {
+            "fields": [
+              {
+                "name": "passports",
+                "type": 6,
+                "typeName": "<Mapping<u128, PassportRecord> as::ink::storage::traits::\nAutoStorableHint<::ink::storage::traits::ManualKey<2088663123u32,\n()>,>>::Type"
+              },
+              {
+                "name": "next_token_id",
+                "type": 0,
+                "typeName": "<u128 as::ink::storage::traits::AutoStorableHint<::ink::storage\n::traits::ManualKey<4166228732u32, ()>,>>::Type"
+              },
+              {
+                "name": "version_history",
+                "type": 16,
+                "typeName": "<Mapping<(u128, u32), VersionHistory> as::ink::storage::traits::\nAutoStorableHint<::ink::storage::traits::ManualKey<2066473465u32,\n()>,>>::Type"
+              },
+              {
+                "name": "subject_id_to_token",
+                "type": 21,
+                "typeName": "<Mapping<[u8; 32], u128> as::ink::storage::traits::\nAutoStorableHint<::ink::storage::traits::ManualKey<3230719324u32,\n()>,>>::Type"
+              },
+              {
+                "name": "token_owner",
+                "type": 24,
+                "typeName": "<Mapping<u128, Address> as::ink::storage::traits::AutoStorableHint\n<::ink::storage::traits::ManualKey<116196741u32, ()>,>>::Type"
+              },
+              {
+                "name": "token_approvals",
+                "type": 27,
+                "typeName": "<Mapping<u128, Address> as::ink::storage::traits::AutoStorableHint\n<::ink::storage::traits::ManualKey<1592799469u32, ()>,>>::Type"
+              },
+              {
+                "name": "owned_tokens_count",
+                "type": 30,
+                "typeName": "<Mapping<Address, u128> as::ink::storage::traits::AutoStorableHint\n<::ink::storage::traits::ManualKey<3648913608u32, ()>,>>::Type"
+              },
+              {
+                "name": "operator_approvals",
+                "type": 33,
+                "typeName": "<Mapping<(Address, Address), ()> as::ink::storage::traits::\nAutoStorableHint<::ink::storage::traits::ManualKey<2421724642u32,\n()>,>>::Type"
+              }
+            ]
+          }
+        },
+        "path": [
+          "dpp_contract",
+          "dpp_contract_v2",
+          "DppContractV2"
+        ]
+      }
+    },
+    {
+      "id": 38,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 15
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 39
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 15
+          },
+          {
+            "name": "E",
+            "type": 39
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 39,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "index": 1,
+                "name": "CouldNotReadInput"
+              }
+            ]
+          }
+        },
+        "path": [
+          "ink_primitives",
+          "LangError"
+        ]
+      }
+    },
+    {
+      "id": 40,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 41
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 39
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 41
+          },
+          {
+            "name": "E",
+            "type": 39
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 41,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 0
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 42
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 0
+          },
+          {
+            "name": "E",
+            "type": 42
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 42,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "index": 0,
+                "name": "TokenNotFound"
+              },
+              {
+                "index": 1,
+                "name": "InvalidInput"
+              },
+              {
+                "index": 2,
+                "name": "Unauthorized"
+              },
+              {
+                "index": 3,
+                "name": "NotOwner"
+              },
+              {
+                "index": 4,
+                "name": "NotApproved"
+              },
+              {
+                "index": 5,
+                "name": "NotAllowed"
+              },
+              {
+                "index": 6,
+                "name": "PassportRevoked"
+              },
+              {
+                "index": 7,
+                "name": "AlreadyRevoked"
+              }
+            ]
+          }
+        },
+        "path": [
+          "dpp_contract",
+          "dpp_contract_v2",
+          "Error"
+        ]
+      }
+    },
+    {
+      "id": 43,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 44
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 39
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 44
+          },
+          {
+            "name": "E",
+            "type": 39
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 44,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "index": 0,
+                "name": "None"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 7
+                  }
+                ],
+                "index": 1,
+                "name": "Some"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 7
+          }
+        ],
+        "path": [
+          "Option"
+        ]
+      }
+    },
+    {
+      "id": 45,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 46
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 39
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 46
+          },
+          {
+            "name": "E",
+            "type": 39
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 46,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 15
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 42
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 15
+          },
+          {
+            "name": "E",
+            "type": 42
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 47,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "index": 0,
+                "name": "None"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 4
+                  }
+                ],
+                "index": 1,
+                "name": "Some"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 4
+          }
+        ],
+        "path": [
+          "Option"
+        ]
+      }
+    },
+    {
+      "id": 48,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 0
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 39
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 0
+          },
+          {
+            "name": "E",
+            "type": 39
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 49,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 50
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 39
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 50
+          },
+          {
+            "name": "E",
+            "type": 39
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 50,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "index": 0,
+                "name": "None"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 1
+                  }
+                ],
+                "index": 1,
+                "name": "Some"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 1
+          }
+        ],
+        "path": [
+          "Option"
+        ]
+      }
+    },
+    {
+      "id": 51,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 52
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 39
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 52
+          },
+          {
+            "name": "E",
+            "type": 39
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 52,
+      "type": {
+        "def": {
+          "primitive": "bool"
+        }
+      }
+    },
+    {
+      "id": 53,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 54
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 39
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 54
+          },
+          {
+            "name": "E",
+            "type": 39
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 54,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "index": 0,
+                "name": "None"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 18
+                  }
+                ],
+                "index": 1,
+                "name": "Some"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 18
+          }
+        ],
+        "path": [
+          "Option"
+        ]
+      }
+    },
+    {
+      "id": 55,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 56
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 39
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 56
+          },
+          {
+            "name": "E",
+            "type": 39
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 56,
+      "type": {
+        "def": {
+          "sequence": {
+            "type": 18
+          }
+        }
+      }
+    },
+    {
+      "id": 57,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 58
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 39
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 58
+          },
+          {
+            "name": "E",
+            "type": 39
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 58,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "index": 0,
+                "name": "None"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 0
+                  }
+                ],
+                "index": 1,
+                "name": "Some"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 0
+          }
+        ],
+        "path": [
+          "Option"
+        ]
+      }
+    },
+    {
+      "id": 59,
+      "type": {
+        "def": {
+          "composite": {
+            "fields": [
+              {
+                "type": 8,
+                "typeName": "[u8; 32]"
+              }
+            ]
+          }
+        },
+        "path": [
+          "ink_primitives",
+          "types",
+          "AccountId"
+        ]
+      }
+    },
+    {
+      "id": 60,
+      "type": {
+        "def": {
+          "composite": {
+            "fields": [
+              {
+                "type": 8,
+                "typeName": "[u8; 32]"
+              }
+            ]
+          }
+        },
+        "path": [
+          "ink_primitives",
+          "types",
+          "Hash"
+        ]
+      }
+    },
+    {
+      "id": 61,
+      "type": {
+        "def": {
+          "primitive": "u64"
+        }
+      }
+    }
+  ],
+  "version": 6
+}
