@@ -55,14 +55,16 @@ while true; do
     echo "Network: Westend Asset Hub"
     echo "Select an option"
     echo ""
-    echo "  DPP OPS:"
+    echo "  ANCHOR OPS:"
     echo ""
-    echo "    1) Mint new DPP token"
-    echo "    2) Get full DPP data"
-    echo "    3) Get product information"
-    echo "    4) Get manufacturer info"
-    echo "    5) Get materials list"
-    echo "    6) Get passport status"
+    echo "    1) Register passport anchor"
+    echo "    2) Get passport anchor"
+    echo "    3) Update dataset (issuer)"
+    echo "    4) Revoke passport (issuer)"
+    echo "    5) Version history"
+    echo "    6) Get version"
+    echo "    7) Recent versions"
+    echo "    8) Next token ID"
     echo ""
     echo "  NFT OPS:"
     echo ""
@@ -70,13 +72,6 @@ while true; do
     echo "    11) Get token owner"
     echo "    12) Transfer token"
     echo "    13) Approve token transfer"
-    echo "    14) Burn token"
-    echo ""
-    echo "  Contract details:"
-    echo ""
-    echo "    15) Get DPP authority (who can update)"
-    echo "    16) Get contract admin"
-    echo "    17) Get next token ID"
     echo ""
     echo "  Config:"
     echo ""
@@ -102,37 +97,37 @@ while true; do
 
     case $choice in
         1)
-            # NOTE: --suri exposes seed to command line (visible in ps, logs)
-            # Use test accounts only, never production seeds
+            # NOTE: --suri is visible to local tooling (shell history, process list).
+            # Use test accounts only.
             read -sp "Insert your seed phrase: " SEED_PHRASE
             echo ""
             echo ""
-            read -p "Product ID: " PRODUCT_ID
-            read -p "Product Name: " PRODUCT_NAME
-            read -p "Description: " DESCRIPTION
-            read -p "Manufacturer Name: " MANUFACTURER_NAME
-            read -p "Manufacturer ID: " MANUFACTURER_ID
-            read -p "Facility Name: " FACILITY_NAME
-            read -p "Country Code: " COUNTRY_CODE
-            read -p "Batch Number (or Enter for None): " BATCH_NUMBER
-            read -p "Serial Number (or Enter for None): " SERIAL_NUMBER
-            
-            # Ensure empty strings if not provided (contract converts empty to None)
-            BATCH_NUMBER="${BATCH_NUMBER:-}"
-            SERIAL_NUMBER="${SERIAL_NUMBER:-}"
-            
+            read -p "Dataset URI (ipfs://...): " DATASET_URI
+            read -p "Payload hash (0x + 64 hex): " PAYLOAD_HASH
+            read -p "Dataset type [application/vc+jwt]: " DATASET_TYPE
+            DATASET_TYPE="${DATASET_TYPE:-application/vc+jwt}"
+            read -p "Granularity [ProductClass|Batch|Item] (default: Batch): " GRANULARITY
+            GRANULARITY="${GRANULARITY:-Batch}"
+            read -p "Subject ID hash (0x + 64 hex) (or Enter for None): " SUBJECT_HASH
+
+            if [ -n "$SUBJECT_HASH" ]; then
+                SUBJECT_ARG="Some($SUBJECT_HASH)"
+            else
+                SUBJECT_ARG="None"
+            fi
+
             cargo contract call \
               --contract "$CONTRACT_ADDRESS" \
-              --message mint_simple \
-              --args "\"$PRODUCT_ID\"" "\"$PRODUCT_NAME\"" "\"$DESCRIPTION\"" "\"$MANUFACTURER_NAME\"" "\"$MANUFACTURER_ID\"" "\"$FACILITY_NAME\"" "\"$COUNTRY_CODE\"" "\"$BATCH_NUMBER\"" "\"$SERIAL_NUMBER\"" \
+              --message register_passport \
+              --args "\"$DATASET_URI\"" "$PAYLOAD_HASH" "\"$DATASET_TYPE\"" "$GRANULARITY" "$SUBJECT_ARG" \
               --suri "$SEED_PHRASE" \
               --url "$RPC_URL" \
               --gas 10000000000 \
               --proof-size 200000 \
               --storage-deposit-limit 100000000000 \
               -x
-            
-            echo -e "${GREEN}Mint submitted${NC}"
+
+            echo -e "${GREEN}Registration submitted${NC}"
             read -p "Enter to continue..."
             ;;
 
@@ -140,7 +135,7 @@ while true; do
             read -p "Token ID: " TOKEN_ID
             cargo contract call \
               --contract "$CONTRACT_ADDRESS" \
-              --message read_passport \
+              --message get_passport \
               --args "$TOKEN_ID" \
               --suri //Alice \
               --url "$RPC_URL" \
@@ -149,26 +144,68 @@ while true; do
             ;;
 
         3)
+            # NOTE: --suri is visible to local tooling (shell history, process list).
+            # Use test accounts only.
+            read -sp "Insert your seed phrase: " SEED_PHRASE
+            echo ""
+            echo ""
             read -p "Token ID: " TOKEN_ID
+            read -p "New dataset URI (ipfs://...): " DATASET_URI
+            read -p "New payload hash (0x + 64 hex): " PAYLOAD_HASH
+            read -p "Dataset type [application/vc+jwt]: " DATASET_TYPE
+            DATASET_TYPE="${DATASET_TYPE:-application/vc+jwt}"
+            read -p "Subject ID hash (0x + 64 hex) (or Enter for None): " SUBJECT_HASH
+
+            if [ -n "$SUBJECT_HASH" ]; then
+                SUBJECT_ARG="Some($SUBJECT_HASH)"
+            else
+                SUBJECT_ARG="None"
+            fi
+
             cargo contract call \
               --contract "$CONTRACT_ADDRESS" \
-              --message get_product_info \
-              --args "$TOKEN_ID" \
-              --suri //Alice \
+              --message update_dataset \
+              --args "$TOKEN_ID" "\"$DATASET_URI\"" "$PAYLOAD_HASH" "\"$DATASET_TYPE\"" "$SUBJECT_ARG" \
+              --suri "$SEED_PHRASE" \
               --url "$RPC_URL" \
-              --output-json
+              --skip-confirm \
+              --gas 10000000000 \
+              --proof-size 200000 \
+              --storage-deposit-limit 100000000000 \
+              -x
+
+            echo -e "${GREEN}Update submitted${NC}"
             read -p "Enter to continue..."
             ;;
 
         4)
+            # NOTE: --suri is visible to local tooling (shell history, process list).
+            # Use test accounts only.
+            read -sp "Insert your seed phrase: " SEED_PHRASE
+            echo ""
+            echo ""
             read -p "Token ID: " TOKEN_ID
+            read -p "Reason (or Enter for None): " REASON
+
+            if [ -n "$REASON" ]; then
+                REASON_ARG="Some(\"$REASON\")"
+            else
+                REASON_ARG="None"
+            fi
+
             cargo contract call \
               --contract "$CONTRACT_ADDRESS" \
-              --message get_manufacturer \
-              --args "$TOKEN_ID" \
-              --suri //Alice \
+              --message revoke_passport \
+              --args "$TOKEN_ID" "$REASON_ARG" \
+              --suri "$SEED_PHRASE" \
               --url "$RPC_URL" \
-              --output-json
+              --skip-confirm \
+              --gas 10000000000 \
+              --proof-size 200000 \
+              --storage-deposit-limit 100000000000 \
+              -x
+
+            echo -e "${GREEN}Revocation submitted${NC}"
             read -p "Enter to continue..."
             ;;
 
@@ -176,7 +213,7 @@ while true; do
             read -p "Token ID: " TOKEN_ID
             cargo contract call \
               --contract "$CONTRACT_ADDRESS" \
-              --message get_materials \
+              --message get_version_history \
               --args "$TOKEN_ID" \
               --suri //Alice \
               --url "$RPC_URL" \
@@ -186,10 +223,34 @@ while true; do
 
         6)
             read -p "Token ID: " TOKEN_ID
+            read -p "Version (u32): " VERSION
             cargo contract call \
               --contract "$CONTRACT_ADDRESS" \
-              --message get_status \
-              --args "$TOKEN_ID" \
+              --message get_version \
+              --args "$TOKEN_ID" "$VERSION" \
+              --suri //Alice \
+              --url "$RPC_URL" \
+              --output-json
+            read -p "Enter to continue..."
+            ;;
+
+        7)
+            read -p "Token ID: " TOKEN_ID
+            read -p "Limit: " LIMIT
+            cargo contract call \
+              --contract "$CONTRACT_ADDRESS" \
+              --message get_recent_versions \
+              --args "$TOKEN_ID" "$LIMIT" \
+              --suri //Alice \
+              --url "$RPC_URL" \
+              --output-json
+            read -p "Enter to continue..."
+            ;;
+
+        8)
+            cargo contract call \
+              --contract "$CONTRACT_ADDRESS" \
+              --message next_token_id \
               --suri //Alice \
               --url "$RPC_URL" \
               --output-json
@@ -265,37 +326,57 @@ while true; do
             ;;
 
         14)
-            # NOTE: --suri exposes seed to command line (visible in ps, logs)
-            # Use test accounts only, never production seeds
+            # NOTE: --suri is visible to local tooling (shell history, process list).
+            # Use test accounts only.
             read -sp "Insert your seed phrase: " SEED_PHRASE
             echo ""
-            read -p "Token ID to burn: " TOKEN_ID
-            echo -e "${RED}Warning: This will permanently destroy the token${NC}"
-            read -p "Are you sure? (yes/no): " CONFIRM
-            if [ "$CONFIRM" = "yes" ]; then
-                cargo contract call \
-                  --contract "$CONTRACT_ADDRESS" \
-                  --message burn \
-                  --args "$TOKEN_ID" \
-                  --suri "$SEED_PHRASE" \
-                  --url "$RPC_URL" \
-                  --skip-confirm \
-                  --gas 10000000000 \
-                  --proof-size 200000 \
-                  --storage-deposit-limit 100000000000 \
-                  -x
-                echo -e "${GREEN}Token burned${NC}"
-            else
-                echo "Cancelled"
-            fi
+            echo ""
+            read -p "From (owner) address: " FROM
+            read -p "To (recipient) address: " TO
+            read -p "Token ID: " TOKEN_ID
+            cargo contract call \
+              --contract "$CONTRACT_ADDRESS" \
+              --message transfer_from \
+              --args "$FROM" "$TO" "$TOKEN_ID" \
+              --suri "$SEED_PHRASE" \
+              --url "$RPC_URL" \
+              --skip-confirm \
+              --gas 10000000000 \
+              --proof-size 200000 \
+              --storage-deposit-limit 100000000000 \
+              -x
+            echo -e "${GREEN}Transfer submitted${NC}"
             read -p "Enter to continue..."
             ;;
 
         15)
+            # NOTE: --suri is visible to local tooling (shell history, process list).
+            # Use test accounts only.
+            read -sp "Insert your seed phrase: " SEED_PHRASE
+            echo ""
+            echo ""
+            read -p "Operator address: " OPERATOR
+            read -p "Approved [true|false]: " APPROVED
+            cargo contract call \
+              --contract "$CONTRACT_ADDRESS" \
+              --message set_approval_for_all \
+              --args "$OPERATOR" "$APPROVED" \
+              --suri "$SEED_PHRASE" \
+              --url "$RPC_URL" \
+              --skip-confirm \
+              --gas 10000000000 \
+              --proof-size 200000 \
+              --storage-deposit-limit 100000000000 \
+              -x
+            echo -e "${GREEN}Operator approval set${NC}"
+            read -p "Enter to continue..."
+            ;;
+
+        16)
             read -p "Token ID: " TOKEN_ID
             cargo contract call \
               --contract "$CONTRACT_ADDRESS" \
-              --message get_dpp_authority \
+              --message get_approved \
               --args "$TOKEN_ID" \
               --suri //Alice \
               --url "$RPC_URL" \
@@ -303,20 +384,13 @@ while true; do
             read -p "Enter to continue..."
             ;;
 
-        16)
-            cargo contract call \
-              --contract "$CONTRACT_ADDRESS" \
-              --message get_admin \
-              --suri //Alice \
-              --url "$RPC_URL" \
-              --output-json
-            read -p "Enter to continue..."
-            ;;
-
         17)
+            read -p "Owner address: " OWNER
+            read -p "Operator address: " OPERATOR
             cargo contract call \
               --contract "$CONTRACT_ADDRESS" \
-              --message get_next_token_id \
+              --message is_approved_for_all \
+              --args "$OWNER" "$OPERATOR" \
               --suri //Alice \
               --url "$RPC_URL" \
               --output-json

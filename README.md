@@ -1,169 +1,158 @@
 # FIDES-DPP
 
-FIDES is a web3 platform built on Polkadot that enables companies to issue digital product passports designed to align with [UNTP](https://opensource.unicc.org/un/unece/uncefact/spec-untp) standards and [EU Regulation 2024/1781](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1781) requirements.
+FIDES-DPP is a Digital Product Passport stack built on Polkadot, designed to align with [UNTP](https://opensource.unicc.org/un/unece/uncefact/spec-untp) and [EU Regulation 2024/1781](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1781).
 
-The repo contains an ink! smart contract and some helper scripts for working with **Digital Product Passports (DPPs)** on Polkadot's Asset Hub.
-
-The contract models product passports as NFT-like tokens and is intended as a concrete implementation that can be used as a starting point for more complete DPP solutions aligned with UNTP-oriented data models and recent EU regulation around product passports.
+The repo includes:
+- an ink! smart contract for an on-chain anchor (dataset URI + payload hash + lifecycle/versioning),
+- a Next.js app (`fidesdpp/`) for issuer setup, creation, verification, and rendering,
+- a CLI (`fidesdpp/cli/`) that reuses the same application layer as the web app.
 
 ---
 
 ## Overview
 
-The core idea:
+The core model:
 
-- each **passport** is represented by a token,
-- the passport data (product info, manufacturer, materials) is stored on-chain, and
-- the contract exposes simple read/write functions to register and query passports.
+- each **passport** is a token on-chain,
+- the on-chain record stores only an **anchor** (`datasetUri` + `payloadHash` + metadata),
+- the full dataset is stored off-chain as a **VC-JWT** (typically on IPFS), retrieved via `datasetUri`.
 
-The contract currently supports two granularities:
+The contract supports three granularities:
 
-- **Item** – single physical product (similar to ERC721). Each passport is represented as a unique NFT token.
-- **Batch** – production batch tracking via `batch_number` field in the passport data. Multiple items can share the same batch identifier.
-
-A separate Model-level representation will be added in later milestones.
-
-For Milestone 1, passport data is stored fully on-chain: product information (id, name, description, category, batch/serial numbers, production date), manufacturer details (name, identifier, country, facility), and material composition. Each passport is linked to an NFT token for ownership tracking.
+- **ProductClass** – model/SKU level
+- **Batch** – production batch level
+- **Item** – serialized item level
 
 ---
 
 ## Status
 
-This repository is work in progress.
+Implemented:
 
-Implemented so far:
+- on-chain anchor contract (registration, read, updates, revocation, version history),
+- custody transfer (NFT-like ownership) without changing issuer authority,
+- web UI for issuer setup (`did:web`), create/list/update/revoke, verification, and rendering,
+- CLI parity for issuer management and passport operations,
+- sandbox test mode for `did:web` flows without a domain (`FIDES_MODE=test`).
 
-- basic passport registration for items (with optional batch tracking via batch_number field),
-- ownership tracking for passport tokens,
-- read functions (by token id),
-- update and revoke entrypoints implemented and tested at contract level; CLI support planned in next milestones,
-- build & test pipeline for the contract.
-
-Planned next steps:
-
-- more complete DPP fields and schema alignment,
-- better tooling around the contract (CLI / SDK).
+Planned next steps are tracked in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ---
 
 ## Requirements
 
-To build and interact with the contract you will need:
+| Component | Minimum Version | Notes |
+|-----------|----------------|-------|
+| Docker | 24.0.0 | Recommended setup |
+| Docker Compose | 2.20.0 | Bundled with Docker Desktop |
+| Node.js | 20.9.0 | For local development |
+| npm | 9.6.0 | Bundled with Node.js |
+| Rust | 1.75.0 | Contract development only |
+| cargo-contract | 4.1.1 | Contract development only |
 
-- a recent stable [Rust](https://www.rust-lang.org/tools/install),
-- [`cargo-contract`](https://github.com/paritytech/cargo-contract),
-- access to a Polkadot Asset Hub endpoint (testnet / Westend).
+Network access:
+- Polkadot RPC (Westend Asset Hub testnet)
+- UNTP schema URLs
+
+See [GETTING_STARTED.md](GETTING_STARTED.md) for detailed setup instructions.
 
 ---
 
 ## Quick Start
 
-Clone the repository and build the contract:
+### Docker (Recommended)
 
 ```bash
 git clone https://github.com/gv70/FIDES-DPP.git
 cd FIDES-DPP
+docker-compose up -d
+```
 
-# install cargo-contract if needed
-cargo install cargo-contract --force --locked
+Access:
+- Web UI: http://localhost:3000
+- IPFS API: http://127.0.0.1:5001
+- IPFS Gateway: http://127.0.0.1:8080
 
-# build the DPP contract
+### Local Development
+
+Requires IPFS daemon running first:
+
+```bash
+# Start IPFS
+ipfs init
+ipfs daemon
+
+# In separate terminal
+cd fidesdpp
+npm install
+npm run dev
+```
+
+See [GETTING_STARTED.md](GETTING_STARTED.md) for step-by-step instructions and [fidesdpp/IPFS_SETUP_FOSS.md](fidesdpp/IPFS_SETUP_FOSS.md) for IPFS setup details.
+
+### Contract build (optional)
+
+For contract development only. The application uses a deployed contract by default.
+
+```bash
 cd dpp_contract
 cargo contract build --release
-```
-
-The compiled contract will be in `dpp_contract/target/ink/dpp_contract.contract`.
-
-### Deploying
-
-Deploy to AssetHub testnet using the provided script:
-
-```bash
-cd dpp_contract
-chmod +x DEPLOY_DPP.sh
-./DEPLOY_DPP.sh
-```
-
-Or manually with cargo-contract:
-
-```bash
-cargo contract instantiate \
-    --constructor new \
-    --suri //Alice \
-    --url wss://westend-asset-hub-rpc.polkadot.io \
-    --contract target/ink/dpp_contract.contract \
-    --skip-dry-run \
-    --gas 250000000 \
-    --proof-size 30000 \
-    --storage-deposit-limit 50000000000
-```
-
-### Interacting
-
-Use the interactive script to call contract functions:
-
-```bash
-cd dpp_contract
-chmod +x INTERACT_DPP.sh
-./INTERACT_DPP.sh
-```
-
-### Running Tests
-
-```bash
-cd dpp_contract
 cargo test
 ```
+
+See `dpp_contract/README.md` for deployment instructions.
+
+### Sandbox mode (no domain)
+
+To test `did:web` flows without a domain:
+
+```bash
+# Set environment variable
+FIDES_MODE=test
+
+# Start application and access
+# http://localhost:3000/test
+```
+
+Uses `did:web:localhost%3A3000` and serves `.well-known/did.json` locally.
+
+See [GETTING_STARTED.md](GETTING_STARTED.md) for configuration details.
 
 ---
 
 ## Usage Examples
 
-### Registering a Product Passport
-
-The simplest way is using the `mint_simple` helper:
+### CLI (from `fidesdpp/`)
 
 ```bash
-cargo contract call \
-  --contract <CONTRACT_ADDRESS> \
-  --message mint_simple \
-  --args "\"PROD-2025-001\"" "\"Wood Table\"" "\"Wood table made by Oak\"" "\"Oak Furniture Co\"" "\"MFG-001\"" "\"California\"" "\"USA\"" "\"BATCH-001\"" "\"SERIAL-123\"" \
-  --suri "your seed phrase" \
-  --url wss://westend-asset-hub-rpc.polkadot.io \
-  --skip-dry-run \
-  --gas 250000000 \
-  --proof-size 30000 \
-  --storage-deposit-limit 50000000000 \
-  -x
+cd fidesdpp
+npm run cli -- --help
 ```
 
-Note: `batch_number` and `serial_number` can be empty strings `""` if not needed (they will be converted to `None` internally).
-
-Or register a full passport with all fields:
+Issuer management:
 
 ```bash
-cargo contract call \
-  --contract <CONTRACT_ADDRESS> \
-  --message register_passport \
-  --args <PASSPORT_DATA> \
-  --suri "your seed phrase" \
-  --url wss://westend-asset-hub-rpc.polkadot.io \
-  --skip-dry-run \
-  --gas 250000000 \
-  --proof-size 30000 \
-  --storage-deposit-limit 50000000000 \
-  -x
+npm run cli -- issuer register --domain example.com --org "Example Org"
+npm run cli -- issuer export --domain example.com --out ./did.json
+npm run cli -- issuer verify --domain example.com
 ```
 
-### Reading a Passport
+Passport verification:
 
 ```bash
-cargo contract call \
-  --contract <CONTRACT_ADDRESS> \
-  --message read_passport \
-  --args <TOKEN_ID> \
-  --suri //Alice \
-  --url wss://westend-asset-hub-rpc.polkadot.io
+npm run cli -- verify-vc --token-id 5
+```
+
+See `fidesdpp/cli/README.md` for the full command set.
+
+### Contract interaction (local/test)
+
+Use the interactive helper:
+
+```bash
+cd dpp_contract
+chmod +x INTERACT_DPP.sh
+./INTERACT_DPP.sh
 ```
 
 ---
@@ -172,62 +161,48 @@ cargo contract call \
 
 ```
 FIDES-DPP/
-├── dpp_contract/              # Main smart contract
-│   ├── lib.rs                 # Contract implementation
-│   ├── Cargo.toml             # Dependencies
-│   ├── DEPLOY_DPP.sh          # Deployment script
-│   ├── INTERACT_DPP.sh        # Interactive CLI
-│   └── README.md              # Contract-specific docs
+├── dpp_contract/              # ink! contract (on-chain anchor)
+├── fidesdpp/                  # Next.js app + CLI workspace
+├── docs/                      # Architecture, testing, deployment, roadmap
+├── scripts/                   # Repo-level helper scripts
 ├── LICENSE
-├── MILESTONE_1_DELIVERY.md    # Milestone delivery report
-└── README.md                  # This file
+├── MILESTONE_1_DELIVERY.md
+├── MILESTONE_2_DELIVERY.md
+└── README.md
 ```
-
-The deployment script stores the contract address in `.fides_dpp_contract` (local file, not versioned).
 
 ---
 
 ## Architecture
 
-The contract uses an ERC721-like approach:
+Two distinct concepts are tracked:
 
-- **One token = one passport** – each passport is represented as a unique NFT token
-- **Batch tracking** – multiple items can share the same `batch_number` field for batch-level grouping
-- **DPP-specific** extensions for update, revoke, and verification (planned)
+- **Issuer authority**: the account that registered the passport. Only the issuer can update/revoke the anchor.
+- **Ownership (custody)**: transferable via NFT-like operations. Transfers do not change the issuer.
 
-This allows leveraging existing NFT tooling while adding DPP-specific functionality. In Milestone 1, passport data (product info, manufacturer details, materials) is stored fully on-chain. Future versions may move to a hybrid model with off-chain storage (e.g., IPFS) for larger datasets.
+The verification flow is:
+
+1. read on-chain record (URI, hash, status, version),
+2. retrieve VC-JWT from `datasetUri`,
+3. recompute SHA-256 hash over the VC-JWT string and compare with `payloadHash`,
+4. verify VC signature (e.g., `did:web`) at the application layer.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
 ## Compliance
 
-The data model is designed to align with core elements of EU Regulation 2024/1781 and the UN Transparency Protocol (UNTP). Currently implemented fields include product identification, manufacturer information, production date/location, and basic material composition.
+The architecture keeps the on-chain layer minimal while allowing the off-chain payload to carry richer datasets and documentation links. This supports progressive coverage of category-specific requirements without storing large or sensitive data in plaintext on-chain.
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Open issues for bug reports or feature requests, submit PRs for improvements. Follow Rust formatting (`cargo fmt`) and ensure tests pass.
-
-## Next Steps
-
-Milestone 1 (smart contract v0.1) is complete. Planned next steps include SDK development, web interface, and IPFS integration. See [docs/ROADMAP.md](docs/ROADMAP.md) for details.
+Issues and pull requests are welcome. Keep changes small and focused, and include runnable steps to reproduce and test.
 
 ---
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
----
-
-## Acknowledgments
-
-- [ink!](https://use.ink/) - Smart contract framework for Polkadot
-- [Polkadot](https://polkadot.network/) - Blockchain platform
-- [UNTP](https://opensource.unicc.org/un/unece/uncefact/spec-untp) - United Nation Transparency Protocol
-- [Parity Technologies](https://www.parity.io/) - For the ink! framework
-
----
-
-**Note**: This is an early-stage project. Contract interfaces may change between versions. Use at your own risk in production environments.
+This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).

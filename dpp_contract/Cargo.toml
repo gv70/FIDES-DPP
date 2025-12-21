@@ -13,6 +13,12 @@ scale-info = { version = "2", default-features = false, features = ["derive"] }
 [lib]
 path = "lib.rs"
 
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"
+
 [features]
 default = ["std"]
 std = [

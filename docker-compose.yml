@@ -1,0 +1,171 @@
+# FIDES-DPP local stack
+#
+# Profiles:
+#   default: kubo + fidesdpp
+#   stateful: + postgres
+#   enhanced: + postgres + walt.id (optional)
+
+services:
+  # IPFS (Kubo)
+  kubo:
+    image: ipfs/kubo:v0.31.0
+    container_name: fides-kubo
+    ports:
+      - "5001:5001"  # API
+      - "8080:8080"  # Gateway
+    volumes:
+      - ipfs-data:/data/ipfs
+    environment:
+      - IPFS_PROFILE=server
+      - IPFS_PATH=/data/ipfs
+    command: ["daemon", "--migrate=true", "--enable-gc"]
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - fides-internal
+    restart: unless-stopped
+
+  # PostgreSQL (optional)
+  postgres:
+    image: postgres:16-alpine
+    container_name: fides-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=fides_dpp
+      - POSTGRES_USER=fides
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fides_dev_password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Optional: initialize schema
+      # - ./fidesdpp/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fides"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fides-internal
+    profiles:
+      - stateful
+      - enhanced
+    restart: unless-stopped
+
+  # walt.id issuer API (optional)
+  waltid-issuer:
+    image: waltid/issuer-api:1.2.0
+    container_name: fides-waltid-issuer
+    ports:
+      - "7002:7002"
+    environment:
+      - WALT_ID_WEB_PORT=7002
+      - WALT_ID_BASE_URL=http://localhost:7002
+    volumes:
+      - ./waltid-config:/waltid-issuer-api/config:ro
+      - waltid-data:/app/data
+    networks:
+      - fides-internal
+    profiles:
+      - enhanced
+    restart: unless-stopped
+
+  # Main FIDES-DPP Application
+  fidesdpp:
+    build:
+      context: ./fidesdpp
+      dockerfile: Dockerfile
+      args:
+        - NODE_VERSION=20.19.0
+    container_name: fides-app
+    ports:
+      - "3000:3000"
+    environment:
+      # Node environment
+      - NODE_ENV=${NODE_ENV:-development}
+      
+      # Walt.id (optional enhancement - two separate flags)
+      - USE_WALT_ID=${USE_WALT_ID:-false}  # Status List management
+      - USE_WALT_ID_DIDWEB=${USE_WALT_ID_DIDWEB:-false}  # DID:web key management
+      - WALT_ID_ISSUER_URL=http://waltid-issuer:7002
+      
+      # Storage backend
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-file}  # 'file' or 'postgres'
+      - DATABASE_URL=${DATABASE_URL:-postgresql://fides:fides_dev_password@postgres:5432/fides_dpp}
+      
+      # IPFS (use kubo service from compose)
+      - IPFS_BACKEND=${IPFS_BACKEND:-kubo}
+      - IPFS_NODE_URL=http://kubo:5001  # Internal network (no host.docker.internal)
+      - IPFS_GATEWAY_URL=http://kubo:8080
+      
+      # Polkadot Chain (Asset Hub)
+      - CONTRACT_ADDRESS=${CONTRACT_ADDRESS:-0x2b7da3eab6f9660e7bfadc5ea0076e5883b6f11f}
+      - POLKADOT_RPC_URL=${POLKADOT_RPC_URL:-wss://westend-asset-hub-rpc.polkadot.io}
+      
+      # UNTP Schema (remote fetch with SHA-256 pinning)
+      - UNTP_SCHEMA_URL=${UNTP_SCHEMA_URL:-https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.1.json}
+      - UNTP_SCHEMA_SHA256=${UNTP_SCHEMA_SHA256:-}
+      
+      # Stable URLs for IDR and renderMethod
+      - IDR_BASE_URL=${IDR_BASE_URL:-http://localhost:3000}
+      - RENDER_BASE_URL=${RENDER_BASE_URL:-http://localhost:3000}
+    volumes:
+      - ./fidesdpp:/app:delegated
+      - ./data:/app/data  # File-based storage (status lists, keys)
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      kubo:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+        required: false  # Only required if STORAGE_BACKEND=postgres
+      waltid-issuer:
+        condition: service_started
+        required: false  # App works without walt.id
+    networks:
+      - fides-internal
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => r.ok || process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+networks:
+  fides-internal:
+    driver: bridge
+
+volumes:
+  ipfs-data:
+    driver: local
+  postgres-data:
+    driver: local
+  waltid-data:
+    driver: local
+
+# Usage Examples:
+# 
+# FOSS-only (default, file-based storage):
+#   docker-compose up
+# 
+# FOSS with persistent state (file-based on ./data volume):
+#   STORAGE_BACKEND=file docker-compose up
+# 
+# Stateful (Postgres persistent state):
+#   docker-compose --profile stateful up
+# 
+# Enhanced (Postgres + walt.id):
+#   docker-compose --profile enhanced up
+# 
+# Build walt.id from source (supply-chain security):
+#   Uncomment 'build' section in waltid-issuer service
+#   docker-compose --profile enhanced build waltid-issuer
+#   docker-compose --profile enhanced up
+# 
+# Background mode: docker-compose up -d
+# Stop: docker-compose down
+# Clean volumes (WARNING: deletes data): docker-compose down -v
+# View logs: docker-compose logs -f fidesdpp

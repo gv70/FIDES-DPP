@@ -5,6 +5,7 @@ test_contract/
 spec-untp-main-data-models/
 spec-untp-main-website-docs/
 spec-untp-*/
+reference/
 
 # Standards and Reference Documents (keep local)
 List of Standards*.xlsx
@@ -27,6 +28,9 @@ dpp_contract/V0.1_SUMMARY.md
 dpp_contract/lib_FULL_AUTHORITY_BACKUP.rs
 dpp_contract/lib_FULL_AUTHORITY_COMPLETE.rs
 dpp_contract/lib_full_authority_v1.rs
+dpp_contract/lib_v0_1_legacy.rs
+dpp_contract/lib_v0_2.rs
+dpp_contract/lib_wrapper.rs.bak
 
 # Test scripts and data (local only)
 dpp_contract/TEST_READONLY.sh
@@ -46,28 +50,100 @@ dpp_contract/TESTING_GUIDE.md
 
 # Root level extra docs
 TESTING.md
+compliance_raccomandtion.md
+typink.md
 my_contract/
+pinata-docs/
+kubo/
 
-# Optional build/config files (exclude to keep repo minimal)
-Dockerfile
-Makefile
-.dockerignore
-.rustfmt.toml
-.cursor/
+# Optional build/config files (root-only)
+/Dockerfile
+/Makefile
+/.dockerignore
+/.rustfmt.toml
+/.cursor/
 
 # Docs (keep roadmap, ignore others)
 docs/*
 !docs/ROADMAP.md
 
+# Published docs (explicit allowlist)
+!docs/TESTING_GUIDE.md
+!docs/ARCHITECTURE.md
+!docs/deployment.md
+
+# Internal planning / non-published docs
+docs/M2_PLAN_POINTS_1-5_REWRITTEN.md
+docs/M2_COMPLIANCE_CHECKLIST.md
+docs/milestones/m2.md
+
 # Contract address file (environment-specific, not versioned)
 dpp_contract/.fides_dpp_contract
+
+# Development data files (contain sensitive keys)
+data/
+data/issuers.json
+
+# Internal milestone / planning notes (local only)
+/ARCHITECTURE.md
+/COMPLETE_ARCHITECTURE.md
+/COMPLETE_IMPLEMENTATION_SUMMARY.md
+/CURRENT_STATUS.md
+/FINAL_TEST_RESULTS.md
+/IMPLEMENTATION_STATUS.md
+/IMPLEMENTATION_SUMMARY.md
+/IMPLEMENTATION_SUMMARY_M2.md
+/M2_IMPLEMENTATION_COMPLETE.md
+/MILESTONE_2_IPFS_INTEGRATION.md
+/TECHNICAL_NOTES_M2.md
+/TODAY_SUMMARY.md
+/VC_INTEGRATION_SUMMARY.md
+/V0_2_IMPLEMENTATION_COMPLETE.md
+/TESTING_CHECKLIST_IT.md
+
+# Internal app notes (local only)
+fidesdpp/IMPLEMENTATION_CHECKLIST.md
+
+# Internal contract notes (local only)
+dpp_contract/MIGRATION_V0_1_TO_V0_2.md
+
+# Internal backups (local only)
+internal/
+
+# Local-only dev folder
+dev-a/
+
+# Local backups / artifacts
+backups/
+
+# App local secrets / state
+fidesdpp/.env.local
+fidesdpp/.env.local.*
+fidesdpp/env.local
+fidesdpp/.env.local.bak
+fidesdpp/data/issuers.json*
+fidesdpp/data/issuers.test.json
+fidesdpp/data/status-lists.json
+fidesdpp/out-well-known/
+
+# CLI build artifacts
+fidesdpp/cli/dist/
+
+# Optional: DID hosting helper
+vercel-did-site/
 
 # Rust build artifacts
 **/target/
 **/*.rs.bk
 **/Cargo.lock
 
+# Node build artifacts
+**/node_modules/
+**/.next/
+**/.turbo/
+
 # IDE files
+**/.git/
 .idea/
 .vscode/
 *.swp
@@ -77,4 +153,3 @@ dpp_contract/.fides_dpp_contract
 # OS files
 .DS_Store
 Thumbs.db
-
