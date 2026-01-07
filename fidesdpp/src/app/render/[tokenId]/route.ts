@@ -13,6 +13,7 @@ import { createIpfsBackend } from '../../../lib/ipfs/IpfsStorageFactory';
 import { decodeVcJwt } from '../../../lib/vc/decodeVcJwt';
 import { extractDppFromVc } from '../../../lib/vc/extractDppFromVc';
 import type { DigitalProductPassport } from '../../../lib/untp/generateDppJsonLd';
+import dppContractMetadata from '../../../contracts/artifacts/dpp_contract/dpp_contract.json';
 
 export async function GET(
   request: NextRequest,
@@ -39,6 +40,7 @@ export async function GET(
       rpcUrl, 
       contractAddress,
       abiPath: process.env.CONTRACT_ABI_PATH || './src/contracts/artifacts/dpp_contract/dpp_contract.json',
+      abiJson: dppContractMetadata,
     });
 
     let onChainData;

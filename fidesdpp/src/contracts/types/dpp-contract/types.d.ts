@@ -28,9 +28,24 @@ export type InkStorageTraitsImplsAutoKey = {};
 
 export type InkStorageTraitsImplsManualKey = {};
 
+export type DppContractDppContractV2VersionHistory = {
+  version: number;
+  datasetUri: string;
+  payloadHash: FixedBytes<32>;
+  datasetType: string;
+  updatedAt: number;
+  updatedBy: H160;
+};
+
 export type DppContractDppContractV2 = {
   passports: { get(arg: bigint): Promise<DppContractDppContractV2PassportRecord | undefined> };
   nextTokenId: bigint;
+  versionHistory: { get(arg: [bigint, number]): Promise<DppContractDppContractV2VersionHistory | undefined> };
+  subjectIdToToken: { get(arg: FixedBytes<32>): Promise<bigint | undefined> };
+  tokenOwner: { get(arg: bigint): Promise<H160 | undefined> };
+  tokenApprovals: { get(arg: bigint): Promise<H160 | undefined> };
+  ownedTokensCount: { get(arg: H160): Promise<bigint | undefined> };
+  operatorApprovals: { get(arg: [H160, H160]): Promise<[] | undefined> };
 };
 
 export type InkPrimitivesLangError = 'CouldNotReadInput';
@@ -39,5 +54,8 @@ export type DppContractDppContractV2Error =
   | 'TokenNotFound'
   | 'InvalidInput'
   | 'Unauthorized'
+  | 'NotOwner'
+  | 'NotApproved'
+  | 'NotAllowed'
   | 'PassportRevoked'
   | 'AlreadyRevoked';

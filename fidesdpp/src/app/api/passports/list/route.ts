@@ -4,6 +4,7 @@ import { Contract } from 'dedot/contracts';
 import { CONTRACT_ADDRESS as DEFAULT_CONTRACT_ADDRESS } from '@/lib/config';
 import type { DppContractContractApi } from '@/contracts/types/dpp-contract';
 import type { FixedBytes } from 'dedot/codecs';
+import dppContractMetadata from '@/contracts/artifacts/dpp_contract/dpp_contract.json';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -54,9 +55,6 @@ export async function GET(request: NextRequest) {
       process.env.CHAIN_RPC_URL ||
       'ws://localhost:9944';
 
-    const abiPath =
-      process.env.CONTRACT_ABI_PATH || './src/contracts/artifacts/dpp_contract/dpp_contract.json';
-
     if (!contractAddress) {
       return NextResponse.json({ success: false, error: 'Contract address not configured' }, { status: 503 });
     }
@@ -64,10 +62,17 @@ export async function GET(request: NextRequest) {
     const provider = new DedotWsProvider(rpcUrl);
     client = await DedotClient.new(provider);
 
-    const fs = require('fs');
-    const path = require('path');
-    const resolvedAbiPath = path.resolve(abiPath);
-    const abiJson = JSON.parse(fs.readFileSync(resolvedAbiPath, 'utf-8'));
+    let abiJson: unknown = dppContractMetadata;
+    if (process.env.CONTRACT_ABI_PATH) {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const resolvedAbiPath = path.resolve(process.env.CONTRACT_ABI_PATH);
+        abiJson = JSON.parse(fs.readFileSync(resolvedAbiPath, 'utf-8'));
+      } catch (error) {
+        console.warn('Failed to load CONTRACT_ABI_PATH, using bundled ABI instead.');
+      }
+    }
 
     const contract = new Contract<DppContractContractApi>(
       client,

@@ -6,6 +6,32 @@ import type { GenericContractEvents, GenericContractEvent, MetadataType } from '
 
 export interface ContractEvents<Type extends MetadataType> extends GenericContractEvents<Type> {
   /**
+   *
+   *
+   **/
+  ApprovalForAll: GenericContractEvent<
+    'ApprovalForAll',
+    {
+      /**
+       *
+       * @indexed: true
+       **/
+      owner: H160;
+      /**
+       *
+       * @indexed: true
+       **/
+      operator: H160;
+      /**
+       *
+       * @indexed: false
+       **/
+      approved: boolean;
+    },
+    Type
+  >;
+
+  /**
    * Emitted when a passport is revoked
    *
    *
@@ -122,6 +148,58 @@ export interface ContractEvents<Type extends MetadataType> extends GenericContra
        * @indexed: false
        **/
       createdAt: number;
+    },
+    Type
+  >;
+
+  /**
+   *
+   *
+   **/
+  Approval: GenericContractEvent<
+    'Approval',
+    {
+      /**
+       *
+       * @indexed: true
+       **/
+      owner: H160;
+      /**
+       *
+       * @indexed: true
+       **/
+      approved: H160;
+      /**
+       *
+       * @indexed: true
+       **/
+      tokenId: bigint;
+    },
+    Type
+  >;
+
+  /**
+   *
+   *
+   **/
+  Transfer: GenericContractEvent<
+    'Transfer',
+    {
+      /**
+       *
+       * @indexed: true
+       **/
+      from: H160 | undefined;
+      /**
+       *
+       * @indexed: true
+       **/
+      to: H160 | undefined;
+      /**
+       *
+       * @indexed: true
+       **/
+      tokenId: bigint;
     },
     Type
   >;

@@ -30,7 +30,8 @@ import type { PolkadotAccount } from '../vc/types';
 export interface PolkadotChainAdapterConfig {
   rpcUrl: string;
   contractAddress: string;
-  abiPath: string;
+  abiPath?: string;
+  abiJson?: unknown;
 }
 
 export class PolkadotChainAdapter implements ChainAdapter {
@@ -55,10 +56,7 @@ export class PolkadotChainAdapter implements ChainAdapter {
     this.api = await ApiPromise.create({ provider });
     
     // Load ABI
-    const fs = require('fs');
-    const path = require('path');
-    const abiPath = path.resolve(this.config.abiPath);
-    const abiJson = JSON.parse(fs.readFileSync(abiPath, 'utf-8'));
+    const abiJson = this.loadAbiJson();
     
     // Create contract instance
     this.contract = new ContractPromise(
@@ -81,10 +79,7 @@ export class PolkadotChainAdapter implements ChainAdapter {
     this.dedotClient = await DedotClient.new(provider);
     
     // Load contract metadata (same file as ABI)
-    const fs = require('fs');
-    const path = require('path');
-    const abiPath = path.resolve(this.config.abiPath);
-    const abiJson = JSON.parse(fs.readFileSync(abiPath, 'utf-8'));
+    const abiJson = this.loadAbiJson();
     
     // Create typed contract instance
     this.dedotContract = new Contract<DppContractContractApi>(
@@ -92,6 +87,21 @@ export class PolkadotChainAdapter implements ChainAdapter {
       abiJson,
       this.config.contractAddress as `0x${string}`
     );
+  }
+
+  private loadAbiJson(): unknown {
+    if (this.config.abiJson) {
+      return this.config.abiJson;
+    }
+
+    if (!this.config.abiPath) {
+      throw new Error('Contract ABI not configured (abiPath or abiJson required).');
+    }
+
+    const fs = require('fs');
+    const path = require('path');
+    const abiPath = path.resolve(this.config.abiPath);
+    return JSON.parse(fs.readFileSync(abiPath, 'utf-8'));
   }
   
   /**

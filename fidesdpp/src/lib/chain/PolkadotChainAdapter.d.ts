@@ -10,7 +10,8 @@ import type { PolkadotAccount } from '../vc/types';
 export interface PolkadotChainAdapterConfig {
     rpcUrl: string;
     contractAddress: string;
-    abiPath: string;
+    abiPath?: string;
+    abiJson?: unknown;
 }
 export declare class PolkadotChainAdapter implements ChainAdapter {
     private config;

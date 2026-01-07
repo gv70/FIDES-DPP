@@ -12,6 +12,7 @@ import { createIpfsBackend } from '../ipfs/IpfsStorageFactory';
 import { PolkadotChainAdapter } from '../chain/PolkadotChainAdapter';
 import type { StatusListManager } from '../vc/StatusListManager';
 import type { AnagraficaService } from '../anagrafica/AnagraficaService';
+import dppContractMetadata from '../../contracts/artifacts/dpp_contract/dpp_contract.json';
 
 export interface DppServiceConfig {
   // IPFS config
@@ -96,9 +97,11 @@ export function createDppService(config: DppServiceConfig): DppApplicationServic
   const chainAdapter = new PolkadotChainAdapter({
     rpcUrl: config.rpcUrl || process.env.CHAIN_RPC_URL || 'ws://localhost:9944',
     contractAddress: config.contractAddress || process.env.CONTRACT_ADDRESS || '',
-    abiPath: config.contractAbiPath || 
-             process.env.CONTRACT_ABI_PATH || 
-             './src/contracts/artifacts/dpp_contract/dpp_contract.json',
+    abiPath:
+      config.contractAbiPath ||
+      process.env.CONTRACT_ABI_PATH ||
+      './src/contracts/artifacts/dpp_contract/dpp_contract.json',
+    abiJson: dppContractMetadata,
   });
 
   // 5. Create Anagrafica Service (optional, for entity/product indexing)
