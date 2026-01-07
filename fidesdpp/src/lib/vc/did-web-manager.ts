@@ -100,15 +100,21 @@ export class DidWebManager {
     
     // Use JSON file for persistence in development
     if (!pool) {
-      // Store in data/ directory at project root
+      const dataDirEnv =
+        process.env.DIDWEB_DATA_PATH
+          ? path.dirname(process.env.DIDWEB_DATA_PATH)
+          : process.env.FIDES_DATA_DIR ||
+            process.env.DATA_DIR ||
+            (process.env.VERCEL ? '/tmp' : '');
       const projectRoot = process.cwd();
-      const dataDir = path.join(projectRoot, 'data');
+      const dataDir = dataDirEnv ? path.resolve(dataDirEnv) : path.join(projectRoot, 'data');
       const storageFile = this.isTestMode() ? 'issuers.test.json' : 'issuers.json';
-      this.jsonStoragePath = path.join(dataDir, storageFile);
+      this.jsonStoragePath = process.env.DIDWEB_DATA_PATH || path.join(dataDir, storageFile);
       
       // Ensure data directory exists
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
+      const jsonDir = path.dirname(this.jsonStoragePath);
+      if (!fs.existsSync(jsonDir)) {
+        fs.mkdirSync(jsonDir, { recursive: true });
       }
       
       // Load existing issuers from file (async, fire and forget for constructor compatibility)

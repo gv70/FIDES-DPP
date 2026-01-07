@@ -35,8 +35,17 @@ export class NativeDidWebManager implements DidWebProvider {
   private issuers: Map<string, StoredIssuerData> = new Map();
   private loaded: boolean = false;
 
-  constructor(dataPath: string = './data/didweb-issuers.json') {
-    this.dataPath = dataPath;
+  constructor(dataPath?: string) {
+    const dataDirEnv =
+      process.env.DIDWEB_DATA_PATH
+        ? path.dirname(process.env.DIDWEB_DATA_PATH)
+        : process.env.FIDES_DATA_DIR ||
+          process.env.DATA_DIR ||
+          (process.env.VERCEL ? '/tmp' : '');
+    const defaultPath = dataDirEnv
+      ? path.join(path.resolve(dataDirEnv), 'didweb-issuers.json')
+      : './data/didweb-issuers.json';
+    this.dataPath = dataPath || process.env.DIDWEB_DATA_PATH || defaultPath;
   }
 
   /**
@@ -279,6 +288,5 @@ export function getDidWebManager(): NativeDidWebManager {
   }
   return globalInstance;
 }
-
 
 

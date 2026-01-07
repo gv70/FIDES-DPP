@@ -83,6 +83,21 @@ CONTRACT_ADDRESS=0x2b7da3eab6f9660e7bfadc5ea0076e5883b6f11f
 POLKADOT_RPC_URL=wss://westend-asset-hub-rpc.polkadot.io
 ```
 
+## File Storage Paths (Optional)
+
+For serverless deployments (e.g., Vercel), local writes must go to a writable
+path such as `/tmp`. You can override the default `./data` locations with:
+
+```bash
+# Base directory for local JSON storage (did:web, status lists, anagrafica)
+FIDES_DATA_DIR=/tmp
+
+# Or override individual files directly
+DIDWEB_DATA_PATH=/tmp/issuers.json
+STATUS_LIST_DATA_PATH=/tmp/status-lists.json
+ANAGRAFICA_DATA_PATH=/tmp/anagrafica.json
+```
+
 ## Complete .env.local Example
 
 ### For FOSS-Only (Kubo)
