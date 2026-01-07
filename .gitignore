@@ -83,6 +83,8 @@ dpp_contract/.fides_dpp_contract
 # Development data files (contain sensitive keys)
 data/
 data/issuers.json
+!fidesdpp/src/data/
+!fidesdpp/src/data/**
 
 # Internal milestone / planning notes (local only)
 /ARCHITECTURE.md
