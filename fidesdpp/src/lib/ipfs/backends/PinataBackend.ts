@@ -118,15 +118,20 @@ export class PinataBackend implements IpfsStorageBackend {
       // Retrieve via Pinata gateway
       const data = await this.pinata.gateways.public.get(cid);
       
-      // Parse if string
+      // Normalize to JSON object
       let parsedData: object;
       if (typeof data === 'string') {
         parsedData = JSON.parse(data);
       } else if (data instanceof Blob) {
-        const text = await data.text();
-        parsedData = JSON.parse(text);
+        parsedData = JSON.parse(await data.text());
+      } else if (data instanceof ArrayBuffer) {
+        parsedData = JSON.parse(Buffer.from(new Uint8Array(data)).toString('utf-8'));
+      } else if (data instanceof Uint8Array) {
+        parsedData = JSON.parse(Buffer.from(data).toString('utf-8'));
+      } else if (data && typeof data === 'object' && (data as any).type === 'Buffer' && Array.isArray((data as any).data)) {
+        parsedData = JSON.parse(Buffer.from((data as any).data).toString('utf-8'));
       } else {
-        parsedData = data;
+        parsedData = data as any;
       }
       
       // Compute hash for verification
@@ -173,16 +178,24 @@ export class PinataBackend implements IpfsStorageBackend {
       // Retrieve via Pinata gateway
       const data = await this.pinata.gateways.public.get(cid);
       
-      // Convert to string
+      // Convert to UTF-8 text
       let text: string;
       if (typeof data === 'string') {
         text = data;
       } else if (data instanceof Blob) {
         text = await data.text();
+      } else if (data instanceof ArrayBuffer) {
+        text = Buffer.from(new Uint8Array(data)).toString('utf-8');
+      } else if (data instanceof Uint8Array) {
+        text = Buffer.from(data).toString('utf-8');
+      } else if (data && typeof data === 'object' && (data as any).type === 'Buffer' && Array.isArray((data as any).data)) {
+        text = Buffer.from((data as any).data).toString('utf-8');
       } else {
-        // If it's an object, stringify it (shouldn't happen for text files)
-        text = JSON.stringify(data);
+        // Fallback: best-effort string conversion
+        text = String(data);
       }
+
+      text = normalizeJwtText(text);
       
       // Compute hash for verification
       const hash = computeJwtHash(text);
@@ -202,4 +215,25 @@ export class PinataBackend implements IpfsStorageBackend {
     const cleanGatewayUrl = this.gatewayUrl.replace(/^https?:\/\//, '');
     return `https://${cleanGatewayUrl}/ipfs/${cid}`;
   }
+}
+
+function normalizeJwtText(text: string): string {
+  let out = String(text || '').trim();
+
+  // If the text is a JSON string (quoted), unwrap it.
+  if ((out.startsWith('"') && out.endsWith('"')) || (out.startsWith("'") && out.endsWith("'"))) {
+    try {
+      out = JSON.parse(out);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Extract a JWT if the response contains extra bytes/chars around it.
+  const jwtMatch = out.match(/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/);
+  if (jwtMatch) {
+    return jwtMatch[0];
+  }
+
+  return out;
 }
