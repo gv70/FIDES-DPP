@@ -116,7 +116,8 @@ export class PinataBackend implements IpfsStorageBackend {
     
     try {
       // Retrieve via Pinata gateway
-      const data = await this.pinata.gateways.public.get(cid);
+      let data: unknown = await this.pinata.gateways.public.get(cid);
+      data = unwrapGatewayResult(data);
       
       // Normalize to JSON object
       let parsedData: object;
@@ -176,7 +177,8 @@ export class PinataBackend implements IpfsStorageBackend {
     
     try {
       // Retrieve via Pinata gateway
-      const data = await this.pinata.gateways.public.get(cid);
+      let data: unknown = await this.pinata.gateways.public.get(cid);
+      data = unwrapGatewayResult(data);
       
       // Convert to UTF-8 text
       let text: string;
@@ -192,7 +194,16 @@ export class PinataBackend implements IpfsStorageBackend {
         text = Buffer.from((data as any).data).toString('utf-8');
       } else {
         // Fallback: best-effort string conversion
-        text = String(data);
+        if (data && typeof data === 'object') {
+          // Try to preserve any embedded JWT/text fields in wrapper objects.
+          try {
+            text = JSON.stringify(data);
+          } catch {
+            text = String(data);
+          }
+        } else {
+          text = String(data);
+        }
       }
 
       text = normalizeJwtText(text);
@@ -215,6 +226,40 @@ export class PinataBackend implements IpfsStorageBackend {
     const cleanGatewayUrl = this.gatewayUrl.replace(/^https?:\/\//, '');
     return `https://${cleanGatewayUrl}/ipfs/${cid}`;
   }
+}
+
+function unwrapGatewayResult(value: unknown): unknown {
+  let current: unknown = value;
+
+  for (let i = 0; i < 5; i++) {
+    if (!current || typeof current !== 'object') {
+      return current;
+    }
+
+    const record = current as any;
+
+    // Common wrapper shapes: { data: ... }, { content: ... }, { body: ... }
+    if ('data' in record && record.data !== undefined) {
+      current = record.data;
+      continue;
+    }
+    if ('content' in record && record.content !== undefined) {
+      current = record.content;
+      continue;
+    }
+    if ('body' in record && record.body !== undefined) {
+      current = record.body;
+      continue;
+    }
+    if ('value' in record && record.value !== undefined) {
+      current = record.value;
+      continue;
+    }
+
+    return current;
+  }
+
+  return current;
 }
 
 function normalizeJwtText(text: string): string {
