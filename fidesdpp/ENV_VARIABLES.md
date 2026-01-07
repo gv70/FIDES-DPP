@@ -35,6 +35,8 @@ IPFS_GATEWAY_URL=http://127.0.0.1:8080
 # IPFS_NODE_AUTH=username:password
 ```
 
+Note: `IPFS_NODE_URL` is required only for `kubo` (self-hosted). It is not required for `pinata` or `helia`.
+
 **Prerequisites:**
 - Install Kubo: https://dist.ipfs.tech/#kubo
 - Run: `ipfs init && ipfs daemon`

@@ -12,13 +12,15 @@ export async function POST(request: NextRequest) {
 
     const contractAddress = process.env.CONTRACT_ADDRESS;
     const rpcUrl = process.env.POLKADOT_RPC_URL || process.env.RPC_URL;
+    const ipfsBackend = (process.env.IPFS_BACKEND as any) || 'kubo';
     const ipfsNodeUrl = process.env.IPFS_NODE_URL;
+    const requiresIpfsNode = ipfsBackend === 'kubo';
 
-    if (!contractAddress || !rpcUrl || !ipfsNodeUrl) {
+    if (!contractAddress || !rpcUrl || (requiresIpfsNode && !ipfsNodeUrl)) {
       const missing = [];
       if (!contractAddress) missing.push('CONTRACT_ADDRESS');
       if (!rpcUrl) missing.push('POLKADOT_RPC_URL or RPC_URL');
-      if (!ipfsNodeUrl) missing.push('IPFS_NODE_URL');
+      if (requiresIpfsNode && !ipfsNodeUrl) missing.push('IPFS_NODE_URL');
 
       return NextResponse.json(
         { error: 'Service not configured', message: `Missing required environment variables: ${missing.join(', ')}` },
@@ -27,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     const service = createDppService({
-      ipfsBackend: (process.env.IPFS_BACKEND as any) || 'kubo',
+      ipfsBackend,
       ipfsNodeUrl,
       ipfsGatewayUrl: process.env.IPFS_GATEWAY_URL,
       pinataJwt: process.env.PINATA_JWT,
@@ -46,4 +48,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: message }, { status: is404 ? 404 : 500 });
   }
 }
-
