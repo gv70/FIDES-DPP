@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
 
     const contract = new Contract<DppContractContractApi>(
       client,
-      abiJson,
+      abiJson as any,
       contractAddress as `0x${string}`
     );
 

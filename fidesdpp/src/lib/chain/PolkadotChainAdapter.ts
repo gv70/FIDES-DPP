@@ -61,7 +61,7 @@ export class PolkadotChainAdapter implements ChainAdapter {
     // Create contract instance
     this.contract = new ContractPromise(
       this.api,
-      abiJson,
+      abiJson as any,
       this.config.contractAddress
     );
   }
@@ -84,7 +84,7 @@ export class PolkadotChainAdapter implements ChainAdapter {
     // Create typed contract instance
     this.dedotContract = new Contract<DppContractContractApi>(
       this.dedotClient,
-      abiJson,
+      abiJson as any,
       this.config.contractAddress as `0x${string}`
     );
   }
