@@ -85,19 +85,62 @@ CONTRACT_ADDRESS=0x2b7da3eab6f9660e7bfadc5ea0076e5883b6f11f
 POLKADOT_RPC_URL=wss://westend-asset-hub-rpc.polkadot.io
 ```
 
+## UNTP Schema & Context (Optional)
+
+UNTP schemas are fetched at runtime to keep the repository Apache-2.0 compliant (UNTP schemas/artifacts may be GPL).
+
+```bash
+# UNTP DPP (Digital Product Passport)
+UNTP_DPP_CONTEXT_URL=https://test.uncefact.org/vocabulary/untp/dpp/0.6.0/
+UNTP_SCHEMA_URL=https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.0.json
+# Optional pinning (integrity)
+UNTP_SCHEMA_SHA256=
+
+# UNTP DTE (Digital Traceability Events)
+UNTP_DTE_CONTEXT_URL=https://test.uncefact.org/vocabulary/untp/dte/0.6.0/
+UNTP_DTE_SCHEMA_URL=https://test.uncefact.org/vocabulary/untp/dte/untp-dte-schema-0.6.0.json
+# Optional pinning (integrity)
+UNTP_DTE_SCHEMA_SHA256=
+
+# Cache schema fetches (default: 24h)
+UNTP_SCHEMA_CACHE_TTL_MS=86400000
+```
+
 ## File Storage Paths (Optional)
 
 For serverless deployments (e.g., Vercel), local writes must go to a writable
 path such as `/tmp`. You can override the default `./data` locations with:
 
 ```bash
-# Base directory for local JSON storage (did:web, status lists, anagrafica)
+# Base directory for local JSON storage (did:web, status lists, anagrafica, dte index)
 FIDES_DATA_DIR=/tmp
 
 # Or override individual files directly
 DIDWEB_DATA_PATH=/tmp/issuers.json
 STATUS_LIST_DATA_PATH=/tmp/status-lists.json
 ANAGRAFICA_DATA_PATH=/tmp/anagrafica.json
+DTE_INDEX_DATA_PATH=/tmp/dte-index.json
+```
+
+## did:web (Issuer + Pilot Mode)
+
+```bash
+# Required for server-side VC-JWT signing when using did:web issuers.
+# Must remain stable across deployments, otherwise previously-registered issuers cannot be decrypted.
+DIDWEB_MASTER_KEY_HEX=
+
+# Optional: base domain used for Pilot Mode path-based did:web identities.
+# If set, pilot DIDs will be created as:
+#   did:web:<DIDWEB_BASE_DOMAIN>:pilots:<pilotId>
+# and resolved at:
+#   https://<DIDWEB_BASE_DOMAIN>/pilots/<pilotId>/did.json
+# Leave empty to default to the current request host.
+DIDWEB_BASE_DOMAIN=fidesdpp.xyz
+
+# Optional: enables local sandbox did:web endpoints:
+# - GET /.well-known/did.json
+# - GET /.well-known/polkadot-accounts.json
+FIDES_MODE=test
 ```
 
 ## Complete .env.local Example

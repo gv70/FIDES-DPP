@@ -8,30 +8,56 @@
 
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, CheckCircle, XCircle, Info, Upload, FileText, Sparkles } from 'lucide-react';
 import { useHybridPassport } from '@/hooks/use-hybrid-passport';
 import type { Granularity } from '@/lib/chain/ChainAdapter';
 import { testProducts, loadProductFromJson, exportProductToJson, type TestProduct } from '@/data/test-products';
 import { useTypink } from 'typink';
+import { appendTxLog } from '@/lib/tx/tx-log';
+import { usePilotContext } from '@/hooks/use-pilot-context';
 
 interface DppHybridCreateProps {
   /** If true, removes Card wrapper (for use in Dialog) */
   noCard?: boolean;
+  /** Optional pre-filled issuer DID (useful for Pilot Mode) */
+  initialIssuerDid?: string;
+  /** If true, disables editing issuer DID and keeps it locked */
+  lockIssuerDid?: boolean;
 }
 
-export function DppHybridCreate({ noCard = false }: DppHybridCreateProps) {
+export function DppHybridCreate({
+  noCard = false,
+  initialIssuerDid,
+  lockIssuerDid = false,
+}: DppHybridCreateProps) {
   const { phase, preparedData, result, error, createPassport, reset } = useHybridPassport();
   const { connectedAccount } = useTypink();
+  const { pilotId } = usePilotContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [inputMode, setInputMode] = useState<'template' | 'upload' | 'manual'>('template');
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [uploadError, setUploadError] = useState<string>('');
+
+  useEffect(() => {
+    if (phase !== 'complete') return;
+    if (!result?.txHash) return;
+    if (!connectedAccount?.address) return;
+    appendTxLog({
+      address: connectedAccount.address,
+      action: 'passport_create',
+      tokenId: result?.tokenId != null ? String(result.tokenId) : undefined,
+      txHash: String(result.txHash),
+      network: 'assethub-westend',
+      pilotId: pilotId || undefined,
+    });
+  }, [phase, result?.txHash, result?.tokenId, connectedAccount?.address, pilotId]);
 
   const normalizeDidWebInput = (raw: string): string => {
     const value = raw.trim();
@@ -74,8 +100,20 @@ export function DppHybridCreate({ noCard = false }: DppHybridCreateProps) {
     annexUserInfoUrls: '',
     // did:web support
     useDidWeb: true,
-    issuerDid: '',
+    issuerDid: initialIssuerDid ? normalizeDidWebInput(initialIssuerDid) : '',
   });
+
+  useEffect(() => {
+    if (!initialIssuerDid) return;
+    if (!lockIssuerDid && formData.issuerDid) return;
+    const normalized = normalizeDidWebInput(initialIssuerDid);
+    setFormData((prev) => ({
+      ...prev,
+      useDidWeb: true,
+      issuerDid: normalized,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialIssuerDid, lockIssuerDid]);
 
   // Load template product
   const handleTemplateSelect = (templateId: string) => {
@@ -113,7 +151,10 @@ export function DppHybridCreate({ noCard = false }: DppHybridCreateProps) {
           ? annex.userInformation.map((d: any) => d?.url).filter(Boolean).join('\n')
           : '',
         useDidWeb: true,
-        issuerDid: normalizeDidWebInput(template.data.issuerDid || ''),
+        issuerDid:
+          lockIssuerDid && initialIssuerDid
+            ? normalizeDidWebInput(initialIssuerDid)
+            : normalizeDidWebInput(template.data.issuerDid || ''),
       });
       setUploadError('');
     }
@@ -172,7 +213,10 @@ export function DppHybridCreate({ noCard = false }: DppHybridCreateProps) {
               ? annex.userInformation.map((d: any) => d?.url).filter(Boolean).join('\n')
               : '',
             useDidWeb: true,
-            issuerDid: normalizeDidWebInput(productData.issuerDid || ''),
+            issuerDid:
+              lockIssuerDid && initialIssuerDid
+                ? normalizeDidWebInput(initialIssuerDid)
+                : normalizeDidWebInput(productData.issuerDid || ''),
           });
           setUploadError('');
           setInputMode('manual'); // Switch to manual mode after upload
@@ -366,7 +410,7 @@ export function DppHybridCreate({ noCard = false }: DppHybridCreateProps) {
           {phase === 'complete' && (
             <>
               <CheckCircle className='w-4 h-4 text-green-600' />
-              <span className='text-sm'>✓ Passport created successfully!</span>
+              <span className='text-sm'>Passport created</span>
             </>
           )}
           {phase === 'error' && (
@@ -390,7 +434,7 @@ export function DppHybridCreate({ noCard = false }: DppHybridCreateProps) {
         {phase === 'complete' && result && (
           <Alert className='bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800'>
             <CheckCircle className='h-4 w-4 text-green-600' />
-            <AlertTitle>Success!</AlertTitle>
+            <AlertTitle>Created</AlertTitle>
             <AlertDescription className='space-y-1 mt-2'>
 	              <div><strong>Token ID:</strong> {result.tokenId}</div>
 	              <div><strong>IPFS CID:</strong> {result.ipfsCid}</div>
@@ -839,7 +883,7 @@ export function DppHybridCreate({ noCard = false }: DppHybridCreateProps) {
                     value={formData.issuerDid}
                     onChange={(e) => setFormData({ ...formData, issuerDid: normalizeDidWebInput(e.target.value) })}
                     placeholder='example.com'
-                    disabled={isLoading}
+                    disabled={isLoading || lockIssuerDid}
                     className='text-sm'
                     required
                   />

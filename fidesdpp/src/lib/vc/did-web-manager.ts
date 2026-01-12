@@ -363,6 +363,72 @@ export class DidWebManager {
   }
 
   /**
+   * Register a new did:web issuer identity for an explicit DID (supports path-based DIDs).
+   *
+   * Examples:
+   * - did:web:example.com
+   * - did:web:example.com:pilots:abc123
+   *
+   * This is useful when you want multiple isolated issuer identities under a single domain,
+   * e.g. pilot/test identities served from path-based did.json endpoints.
+   */
+  async registerIssuerDid(
+    did: string,
+    organizationName: string,
+    options?: {
+      /** Override initial status (default: PENDING) */
+      status?: IssuerStatus;
+      /** Extra metadata fields to persist */
+      metadata?: Record<string, unknown>;
+    }
+  ): Promise<StoredIssuerIdentity> {
+    if (!did || typeof did !== 'string' || !did.startsWith('did:web:')) {
+      throw new Error(`Invalid did:web DID: ${did}`);
+    }
+
+    const existing = await this.getIssuerIdentity(did);
+    if (existing) {
+      throw new Error(`Issuer already registered for DID: ${did}`);
+    }
+
+    const remainder = did.slice(8);
+    const parts = remainder.split(':');
+    const domainRaw = parts[0];
+    const pathParts = parts.slice(1);
+    const domain = decodeURIComponent(domainRaw);
+
+    const keyPair = this.generateEd25519KeyPair();
+    const encryptedPrivateKey = this.encryptPrivateKey(keyPair.privateKey);
+
+    const identity: StoredIssuerIdentity = {
+      did,
+      method: 'did:web',
+      signingKey: {
+        type: 'ed25519',
+        publicKey: keyPair.publicKey,
+      },
+      metadata: {
+        domain,
+        organizationName,
+        registeredAt: new Date(),
+        ...(pathParts.length ? { path: pathParts } : {}),
+        ...(options?.metadata || {}),
+      },
+      status: options?.status ?? IssuerStatus.PENDING,
+      encryptedPrivateKey,
+    };
+
+    if (this.pool) {
+      await this.storeInPostgres(identity);
+    } else {
+      this.devStorage.set(did, identity);
+      await this.saveToJson();
+    }
+
+    return identity;
+  }
+
+  /**
    * Get issuer identity by DID
    * 
    * @param did - DID identifier (e.g., "did:web:company.com")

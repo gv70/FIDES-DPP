@@ -450,6 +450,134 @@ export class JwtVcEngine implements VcEngine {
     return decoded;
   }
 
+  /**
+   * Issue a UNTP Digital Traceability Event (DTE) as VC-JWT using an explicit issuer identity.
+   *
+   * UNTP note: One DTE credential may contain multiple events (array in `credentialSubject`).
+   *
+   * @param events - Array of DTE event objects (e.g. TransformationEvent, ObjectEvent, etc.)
+   * @param issuerIdentity - VC issuer identity (did:web recommended)
+   * @param options - Optional issuance options
+   * @returns VC envelope with JWT
+   */
+  async issueDteVcWithIdentity(
+    events: unknown[],
+    issuerIdentity: VcIssuerIdentity,
+    options?: IssueOptions
+  ): Promise<VcEnvelope> {
+    if (issuerIdentity.signingKey.type !== 'ed25519') {
+      throw new Error(
+        `Invalid signing key type: ${issuerIdentity.signingKey.type}. ` +
+          `Only 'ed25519' is supported for EdDSA algorithm.`
+      );
+    }
+
+    if (issuerIdentity.signingKey.publicKey.length !== 32) {
+      throw new Error(
+        `Invalid ed25519 public key length: expected 32 bytes, got ${issuerIdentity.signingKey.publicKey.length}`
+      );
+    }
+
+    if (!Array.isArray(events) || events.length === 0) {
+      throw new Error('DTE events must be a non-empty array');
+    }
+
+    const credentialId = options?.credentialId || `urn:uuid:${this.generateUuid()}`;
+    const dteContextUrl =
+      process.env.UNTP_DTE_CONTEXT_URL || 'https://test.uncefact.org/vocabulary/untp/dte/0.6.0/';
+    const issuerName =
+      issuerIdentity.metadata?.organizationName ||
+      issuerIdentity.metadata?.domain ||
+      issuerIdentity.did;
+
+    const vcPayload: any = {
+      '@context': [
+        'https://www.w3.org/ns/credentials/v2',
+        dteContextUrl,
+        'https://www.w3.org/2018/credentials/v1',
+        ...(options?.additionalContexts || []),
+      ],
+      type: ['VerifiableCredential', 'DigitalTraceabilityEvent'],
+      id: credentialId,
+      issuer: {
+        type: ['CredentialIssuer'],
+        id: issuerIdentity.did,
+        name: issuerName,
+      },
+      validFrom: new Date().toISOString(),
+      ...(options?.expirationDate && { validUntil: options.expirationDate.toISOString() }),
+      credentialSubject: events,
+      credentialSchema: {
+        id:
+          process.env.UNTP_DTE_SCHEMA_URL ||
+          'https://test.uncefact.org/vocabulary/untp/dte/untp-dte-schema-0.6.0.json',
+        type: 'JsonSchema2023',
+      },
+      ...(process.env.UNTP_DTE_SCHEMA_SHA256 && {
+        schemaSha256: process.env.UNTP_DTE_SCHEMA_SHA256,
+      }),
+    };
+
+    if (this.statusListManager) {
+      try {
+        const statusListEntry = await this.statusListManager.assignIndex(
+          issuerIdentity.did,
+          credentialId
+        );
+
+        if (!vcPayload['@context'].includes('https://w3id.org/vc/status-list/2021/v1')) {
+          vcPayload['@context'].push('https://w3id.org/vc/status-list/2021/v1');
+        }
+
+        vcPayload.credentialStatus = statusListEntry;
+      } catch (error: any) {
+        console.warn('Failed to assign status list index:', error.message);
+      }
+    }
+
+    const signer = createIssuerSigner(issuerIdentity);
+
+    let keyId: string | undefined;
+    if (issuerIdentity.method === 'did:web') {
+      try {
+        const didResolution = await this.resolver.resolve(issuerIdentity.did);
+        if (didResolution.didDocument) {
+          const jwkVm = didResolution.didDocument.verificationMethod?.find(
+            (vm: any) => vm.type === 'JsonWebKey2020' && vm.publicKeyJwk
+          );
+          if (jwkVm) {
+            keyId = jwkVm.id;
+          } else {
+            const firstVm = didResolution.didDocument.verificationMethod?.[0];
+            if (firstVm && didResolution.didDocument.assertionMethod?.includes(firstVm.id)) {
+              keyId = firstVm.id;
+            }
+          }
+        }
+      } catch (e: any) {
+        console.warn('[DTE VC Issuance] DID resolution failed (continuing without kid):', e?.message || String(e));
+      }
+    }
+
+    const issuerOptions: any = {
+      did: issuerIdentity.did,
+      signer,
+      alg: 'EdDSA',
+    };
+    if (keyId) issuerOptions.kid = keyId;
+
+    const vcJwt = await createVerifiableCredentialJwt(
+      vcPayload,
+      issuerOptions,
+      {
+        exp: options?.expirationDate ? Math.floor(options.expirationDate.getTime() / 1000) : undefined,
+        jti: credentialId,
+      }
+    );
+
+    return this.decodeVc(vcJwt);
+  }
+
   async verifyDppVc(
     vcJwt: string,
     options?: VerifyOptions & { tokenId?: string }

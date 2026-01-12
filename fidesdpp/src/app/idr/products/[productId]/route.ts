@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { IdrService } from '../../../../lib/idr/IdrService';
 import { createAnagraficaStorage } from '../../../../lib/anagrafica/createAnagraficaStorage';
 import { AnagraficaService } from '../../../../lib/anagrafica/AnagraficaService';
+import { createDteIndexStorage } from '../../../../lib/dte/createDteIndexStorage';
 
 export async function GET(
   request: NextRequest,
@@ -38,7 +39,15 @@ export async function GET(
     }
 
     // Initialize IDR service with anagrafica (if available)
-    const idrService = new IdrService(undefined, anagraficaService);
+    let dteIndexStorage: any | undefined;
+    try {
+      dteIndexStorage = createDteIndexStorage();
+    } catch (error) {
+      // DTE index not available - continue without it
+      console.debug('DTE index storage not available for IDR');
+    }
+
+    const idrService = new IdrService(request.nextUrl.origin, anagraficaService, dteIndexStorage);
 
     // Case 1: Return linkset JSON
     if (linkType === 'linkset') {
@@ -126,7 +135,7 @@ export async function GET(
         error: 'tokenId required for product resolution',
         productId,
         help: 'Use: /idr/products/{productId}?tokenId={id}&linkType={type}',
-        availableLinkTypes: ['linkset', 'untp:dpp', 'alternate'],
+        availableLinkTypes: ['linkset', 'untp:dpp', 'untp:dte', 'alternate'],
         note: anagraficaService 
           ? 'Anagrafica available - tokenId can be auto-resolved for known products'
           : 'Anagrafica not available - tokenId must be provided explicitly',
@@ -146,6 +155,4 @@ export async function GET(
     );
   }
 }
-
-
 

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useTypink, txToaster } from 'typink';
 import { useContractAddress } from '@/hooks/use-contract-address';
@@ -15,17 +16,31 @@ import { useMemo } from 'react';
 import { Contract } from 'dedot/contracts';
 import { ContractId, deployments } from '@/contracts/deployments';
 import type { DppContractContractApi } from '@/contracts/types/dpp-contract';
+import { appendTxLog } from '@/lib/tx/tx-log';
+import { usePilotContext } from '@/hooks/use-pilot-context';
 
 interface PassportUpdateModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   tokenId?: string;
   onSuccess?: () => void;
+  /** Optional pre-filled issuer DID (useful for Pilot Mode) */
+  initialIssuerDid?: string;
+  /** If true, disables editing issuer DID and keeps it locked */
+  lockIssuerDid?: boolean;
 }
 
-export function PassportUpdateModal({ open, onOpenChange, tokenId: initialTokenId, onSuccess }: PassportUpdateModalProps) {
+export function PassportUpdateModal({
+  open,
+  onOpenChange,
+  tokenId: initialTokenId,
+  onSuccess,
+  initialIssuerDid,
+  lockIssuerDid = false,
+}: PassportUpdateModalProps) {
   const { connectedAccount, client, network } = useTypink();
   const { activeAddress: contractAddress } = useContractAddress();
+  const { pilotId } = usePilotContext();
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingPassport, setIsLoadingPassport] = useState(false);
   const [isLoadingDataset, setIsLoadingDataset] = useState(false);
@@ -42,6 +57,7 @@ export function PassportUpdateModal({ open, onOpenChange, tokenId: initialTokenI
   const [manufacturerIdentifier, setManufacturerIdentifier] = useState('');
   const [manufacturerCountry, setManufacturerCountry] = useState('');
   const [manufacturerFacility, setManufacturerFacility] = useState('');
+  const [traceabilityEventRefs, setTraceabilityEventRefs] = useState('');
   const [overrideUniqueProductId, setOverrideUniqueProductId] = useState(false);
   const [uniqueProductIdOverride, setUniqueProductIdOverride] = useState('');
   const [advancedPatchJson, setAdvancedPatchJson] = useState('');
@@ -73,7 +89,7 @@ export function PassportUpdateModal({ open, onOpenChange, tokenId: initialTokenI
       setPassport(null);
       setCurrentDpp(null);
       setError('');
-      setIssuerDid('');
+      setIssuerDid(initialIssuerDid ? normalizeDidWeb(initialIssuerDid) : '');
       setProductName('');
       setProductDescription('');
       setBatchNumber('');
@@ -82,6 +98,7 @@ export function PassportUpdateModal({ open, onOpenChange, tokenId: initialTokenI
       setManufacturerIdentifier('');
       setManufacturerCountry('');
       setManufacturerFacility('');
+      setTraceabilityEventRefs('');
       setOverrideUniqueProductId(false);
       setUniqueProductIdOverride('');
       setAdvancedPatchJson('');
@@ -89,6 +106,15 @@ export function PassportUpdateModal({ open, onOpenChange, tokenId: initialTokenI
       setPreparedUpdate(null);
     }
   }, [open, initialTokenId]);
+
+  // If Pilot Mode is active and issuer is locked, keep it in sync when props change
+  useEffect(() => {
+    if (!open) return;
+    if (!lockIssuerDid) return;
+    if (!initialIssuerDid) return;
+    setIssuerDid(normalizeDidWeb(initialIssuerDid));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, lockIssuerDid, initialIssuerDid]);
 
   // Load passport data when modal opens and tokenId is provided
   useEffect(() => {
@@ -179,6 +205,13 @@ export function PassportUpdateModal({ open, onOpenChange, tokenId: initialTokenI
           uniqueProductIdFromVc !== productIdentifier;
         setOverrideUniqueProductId(!!hasOverride);
         setUniqueProductIdOverride(hasOverride ? String(uniqueProductIdFromVc) : '');
+
+        const traceability = Array.isArray(dpp?.traceabilityInformation) ? dpp.traceabilityInformation : [];
+        const refs = traceability
+          .map((t: any) => String(t?.eventReference || t?.event_ref || t?.ref || '').trim())
+          .filter(Boolean)
+          .join('\n');
+        setTraceabilityEventRefs(refs);
       }
     } catch (e: any) {
       setError(e.message || 'Failed to load VC dataset');
@@ -299,6 +332,18 @@ export function PassportUpdateModal({ open, onOpenChange, tokenId: initialTokenI
         };
       }
 
+      const parsedTraceability = traceabilityEventRefs
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const hadExistingTraceability = Array.isArray((currentDpp as any)?.traceabilityInformation);
+      if (parsedTraceability.length > 0 || hadExistingTraceability) {
+        dppPatch.traceabilityInformation = parsedTraceability.map((ref) => ({
+          '@type': 'TraceabilityEvent',
+          eventReference: ref,
+        }));
+      }
+
       if (Object.keys(dppPatch).length > 0) {
         patch.dppPatch = dppPatch;
       }
@@ -339,6 +384,7 @@ export function PassportUpdateModal({ open, onOpenChange, tokenId: initialTokenI
       setPreparedUpdate(prepared.updateData);
 
       const toaster = txToaster();
+      let capturedTxHash: string | undefined;
       const normalizeHex = (value: any, name: string): string => {
         const v = String(value || '').trim();
         const normalized = v.startsWith('0x') ? v : `0x${v}`;
@@ -364,10 +410,26 @@ export function PassportUpdateModal({ open, onOpenChange, tokenId: initialTokenI
 
       await tx
         .signAndSend(connectedAccount.address, (progress: any) => {
+          try {
+            const h = progress?.txHash?.toHex?.() || progress?.txHash?.toString?.() || '';
+            if (h && !capturedTxHash) capturedTxHash = String(h);
+          } catch {
+            // ignore
+          }
           toaster.onTxProgress(progress);
         })
         .untilFinalized();
 
+      if (capturedTxHash) {
+        appendTxLog({
+          address: connectedAccount.address,
+          action: 'passport_update',
+          tokenId,
+          txHash: capturedTxHash,
+          network: 'assethub-westend',
+          pilotId: pilotId || undefined,
+        });
+      }
       toast.success(`Passport ${tokenId} updated (v${prepared.updateData.nextVersion})`);
       onOpenChange(false);
       onSuccess?.();
@@ -470,7 +532,7 @@ export function PassportUpdateModal({ open, onOpenChange, tokenId: initialTokenI
                 placeholder="did:web:example.com"
                 value={issuerDid}
                 onChange={(e) => setIssuerDid(e.target.value)}
-                disabled={isLoading}
+                disabled={isLoading || lockIssuerDid}
               />
               <p className="text-xs text-muted-foreground">
                 You can enter either <code>did:web:example.com</code> or just <code>example.com</code>.
@@ -568,6 +630,21 @@ export function PassportUpdateModal({ open, onOpenChange, tokenId: initialTokenI
                   disabled={isLoading}
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="update-traceability">Traceability (DTE references) — optional</Label>
+              <Textarea
+                id="update-traceability"
+                value={traceabilityEventRefs}
+                onChange={(e) => setTraceabilityEventRefs(e.target.value)}
+                placeholder={'bafy...\nipfs://bafy...\nhttps://gateway.example/ipfs/bafy...'}
+                disabled={isLoading}
+                className="min-h-[90px]"
+              />
+              <p className="text-xs text-muted-foreground">
+                One reference per line. Recommended flow is resolver-first (DTEs indexed by product ID); this is only a manual fallback.
+              </p>
             </div>
 
             <div className="space-y-2">

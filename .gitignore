@@ -67,6 +67,9 @@ kubo/
 docs/*
 !docs/ROADMAP.md
 
+# Pilot (local-only)
+docs/pilot/Survey_Questions_IT.md
+
 # Published docs (explicit allowlist)
 !docs/TESTING_GUIDE.md
 !docs/ARCHITECTURE.md

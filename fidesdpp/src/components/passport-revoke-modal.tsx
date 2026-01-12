@@ -15,6 +15,8 @@ import { useMemo } from 'react';
 import { Contract } from 'dedot/contracts';
 import { ContractId, deployments } from '@/contracts/deployments';
 import type { DppContractContractApi } from '@/contracts/types/dpp-contract';
+import { appendTxLog } from '@/lib/tx/tx-log';
+import { usePilotContext } from '@/hooks/use-pilot-context';
 
 interface PassportRevokeModalProps {
   open: boolean;
@@ -26,6 +28,7 @@ interface PassportRevokeModalProps {
 export function PassportRevokeModal({ open, onOpenChange, tokenId: initialTokenId, onSuccess }: PassportRevokeModalProps) {
   const { connectedAccount, client } = useTypink();
   const { activeAddress: contractAddress } = useContractAddress();
+  const { pilotId } = usePilotContext();
   const [isLoading, setIsLoading] = useState(false);
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string>('');
@@ -94,6 +97,7 @@ export function PassportRevokeModal({ open, onOpenChange, tokenId: initialTokenI
     setError('');
 
     const toaster = txToaster();
+    let capturedTxHash: string | undefined;
 
     try {
       const tx = (contract as any).tx.revokePassport(
@@ -103,10 +107,26 @@ export function PassportRevokeModal({ open, onOpenChange, tokenId: initialTokenI
 
       await tx
         .signAndSend(connectedAccount.address, (progress: any) => {
+          try {
+            const h = progress?.txHash?.toHex?.() || progress?.txHash?.toString?.() || '';
+            if (h && !capturedTxHash) capturedTxHash = String(h);
+          } catch {
+            // ignore
+          }
           toaster.onTxProgress(progress);
         })
         .untilFinalized();
 
+      if (capturedTxHash) {
+        appendTxLog({
+          address: connectedAccount.address,
+          action: 'passport_revoke',
+          tokenId,
+          txHash: capturedTxHash,
+          network: 'assethub-westend',
+          pilotId: pilotId || undefined,
+        });
+      }
       toast.success(`Passport ${tokenId} revoked successfully`);
       onOpenChange(false);
       setReason('');

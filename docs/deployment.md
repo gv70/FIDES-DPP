@@ -1,8 +1,5 @@
 # Deployment Guide - FIDES-DPP
 
-**Version**: 0.2.0 (Milestone 2)  
-**Last Updated**: 2025-12-11
-
 This guide covers deployment options for FIDES-DPP from development to production.
 
 **Important**: Docker Compose is the **reference reproducibility path for CI and fresh environments**. Local installs are valid for development. Both paths produce identical results. See [TESTING_GUIDE.md](./TESTING_GUIDE.md) for dual-path instructions.

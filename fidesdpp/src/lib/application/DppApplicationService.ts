@@ -1217,7 +1217,16 @@ export class DppApplicationService {
       input.batchNumber
     );
 
-    return {
+    const normalizeTraceabilityRef = (raw: string): string => {
+      const v = String(raw || '').trim();
+      if (!v) return v;
+      if (v.startsWith('ipfs://')) return v;
+      if (v.startsWith('http://') || v.startsWith('https://')) return v;
+      // Best-effort: treat as CID
+      return `ipfs://${v}`;
+    };
+
+    const dpp: any = {
       '@type': 'DigitalProductPassport',
       granularityLevel: this.mapGranularityToUntp(granularity),
       product: {
@@ -1236,7 +1245,20 @@ export class DppApplicationService {
         country: input.manufacturer.country,
         facility: input.manufacturer.facility,
       },
-    } as DigitalProductPassport;
+    };
+
+    if (Array.isArray(input.traceability) && input.traceability.length > 0) {
+      dpp.traceabilityInformation = input.traceability
+        .map((t) => ({
+          '@type': 'TraceabilityEvent',
+          eventReference: normalizeTraceabilityRef(t.event_ref),
+          ...(t.actor ? { actor: t.actor } : {}),
+          ...(t.evidence_uri ? { evidenceLink: t.evidence_uri } : {}),
+        }))
+        .filter((t: any) => !!t.eventReference);
+    }
+
+    return dpp as DigitalProductPassport;
   }
 
   /**

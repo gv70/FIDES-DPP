@@ -11,12 +11,15 @@ import { NonMappedAccountAlert } from '@/components/shared/non-mapped-account-al
 import { Button } from '@/components/ui/button';
 import { Plus, Edit, XCircle, ArrowRightLeft } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { usePilotContext } from '@/hooks/use-pilot-context';
 
 export default function PassportsPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [revokeModalOpen, setRevokeModalOpen] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const { pilotDid, pilotId, clearPilot } = usePilotContext();
 
   useEffect(() => {
     const syncFromHash = () => {
@@ -43,6 +46,26 @@ export default function PassportsPage() {
     <div className="space-y-6">
       <BalanceInsufficientAlert />
       <NonMappedAccountAlert />
+      {pilotDid && (
+        <Alert className="border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/20">
+          <AlertTitle>Pilot Mode active</AlertTitle>
+          <AlertDescription className="flex flex-col gap-2">
+            <div className="text-sm">
+              Using pilot issuer DID for create/update: <code>{pilotDid}</code>
+              {pilotId ? (
+                <>
+                  {' '}(<span className="text-muted-foreground">pilotId</span> <code>{pilotId}</code>)
+                </>
+              ) : null}
+            </div>
+            <div>
+              <Button type="button" size="sm" variant="outline" onClick={() => clearPilot()}>
+                Clear Pilot Mode
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
       {/* Page Header */}
       <div>
         <h1 className="text-3xl font-semibold">Passport Management</h1>
@@ -67,7 +90,11 @@ export default function PassportsPage() {
             <DialogHeader>
               <DialogTitle>Create Digital Product Passport</DialogTitle>
             </DialogHeader>
-            <DppHybridCreate noCard />
+            <DppHybridCreate
+              noCard
+              initialIssuerDid={pilotDid || undefined}
+              lockIssuerDid={!!pilotDid}
+            />
           </DialogContent>
         </Dialog>
 
@@ -99,6 +126,8 @@ export default function PassportsPage() {
           setUpdateModalOpen(open);
           if (!open) clearHashIf('#update');
         }}
+        initialIssuerDid={pilotDid || undefined}
+        lockIssuerDid={!!pilotDid}
         onSuccess={() => {
           // Optionally refresh the list
         }}

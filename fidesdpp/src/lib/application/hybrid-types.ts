@@ -96,6 +96,21 @@ export interface CreatePassportFormInput {
       addressCountry?: string;
     };
   };
+
+  /**
+   * Optional traceability anchors (DTE links).
+   *
+   * This maps to `traceabilityInformation` in the UNTP DPP credentialSubject.
+   * Each entry should reference a DTE credential (e.g. `ipfs://<cid>`).
+   */
+  traceability?: Array<{
+    /** Reference to the traceability event credential (URI) */
+    event_ref: string;
+    /** Optional actor identifier (DID/URI) */
+    actor?: string;
+    /** Optional evidence link (e.g. gateway URL) */
+    evidence_uri?: string;
+  }>;
   
   // Issuer info (from wallet)
   issuerAddress: string;

@@ -14,6 +14,8 @@ import { decodeVcJwt } from '../../../lib/vc/decodeVcJwt';
 import { extractDppFromVc } from '../../../lib/vc/extractDppFromVc';
 import type { DigitalProductPassport } from '../../../lib/untp/generateDppJsonLd';
 import dppContractMetadata from '../../../contracts/artifacts/dpp_contract/dpp_contract.json';
+import { createDteIndexStorage } from '../../../lib/dte/createDteIndexStorage';
+import { deriveLookupAliases } from '../../../lib/dte/dte-indexing';
 
 export async function GET(
   request: NextRequest,
@@ -114,6 +116,37 @@ export async function GET(
     // 4. Extract DPP
     const dpp = extractDppFromVc(vcPayload);
 
+    // 4b. Discover related DTEs via resolver-first index (best-effort)
+    let relatedDtes: Array<{ cid: string; href: string; title: string }> = [];
+    try {
+      const productIdentifier = String((dpp as any)?.product?.identifier || '').trim();
+      if (productIdentifier) {
+        const dteIndex = createDteIndexStorage();
+        const candidates = deriveLookupAliases(productIdentifier);
+        const all = (await Promise.all(candidates.map((id) => dteIndex.listByProductId(id, { limit: 50 })))).flat();
+
+        const byCid = new Map<string, { cid: string; title: string }>();
+        for (const r of all) {
+          if (!r?.dteCid) continue;
+          const when = r.eventTime ? String(r.eventTime) : '';
+          const kind = r.eventType ? String(r.eventType) : '';
+          const title = `DTE${kind ? ` (${kind})` : ''}${when ? ` @ ${when}` : ''}`;
+          if (!byCid.has(r.dteCid)) {
+            byCid.set(r.dteCid, { cid: r.dteCid, title });
+          }
+        }
+
+        const renderBaseUrl = (process.env.RENDER_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+        relatedDtes = Array.from(byCid.values()).map((d) => ({
+          cid: d.cid,
+          href: `${renderBaseUrl}/api/untp/dte/vc?cid=${encodeURIComponent(d.cid)}`,
+          title: d.title,
+        }));
+      }
+    } catch (e: any) {
+      console.warn('[Render Route] DTE discovery failed:', e?.message || String(e));
+    }
+
     // 5. Render HTML
     const html = renderDppAsHtml(
       dpp,
@@ -127,7 +160,8 @@ export async function GET(
         onChainVersion,
         requestedVersion:
           typeof requestedVersion === 'number' && Number.isFinite(requestedVersion) ? requestedVersion : undefined,
-      }
+      },
+      relatedDtes
     );
 
     return new NextResponse(html, {
@@ -151,7 +185,8 @@ function renderDppAsHtml(
   tokenId: string,
   onChainData: any,
   verifyKey?: string,
-  meta?: { onChainVersion?: number; requestedVersion?: number }
+  meta?: { onChainVersion?: number; requestedVersion?: number },
+  relatedDtes?: Array<{ cid: string; href: string; title: string }>
 ): string {
   const renderBaseUrl = process.env.RENDER_BASE_URL || 'http://localhost:3000';
   const verifyUrl = `${renderBaseUrl}/verification?tokenId=${encodeURIComponent(tokenId)}${
@@ -167,6 +202,27 @@ function renderDppAsHtml(
     typeof onChainVersion === 'number' &&
     Number.isFinite(onChainVersion) &&
     requestedVersion !== onChainVersion;
+
+  const traceabilitySection =
+    relatedDtes && relatedDtes.length > 0
+      ? `
+      <div class="section">
+        <div class="section-title">Traceability (DTE)</div>
+        <table class="table">
+          <tr><th>CID</th><th>Credential</th></tr>
+          ${relatedDtes
+            .map(
+              (d) => `
+          <tr>
+            <th><code>${d.cid}</code></th>
+            <td><a href="${d.href}" target="_blank" rel="noreferrer">${d.title}</a></td>
+          </tr>`
+            )
+            .join('')}
+        </table>
+      </div>
+      `
+      : '';
 
   return `
 <!DOCTYPE html>
@@ -369,6 +425,7 @@ function renderDppAsHtml(
     </div>
     
     <div class="content">
+      ${traceabilitySection}
       <div class="section">
         <div class="section-title">Product</div>
         <table class="table">

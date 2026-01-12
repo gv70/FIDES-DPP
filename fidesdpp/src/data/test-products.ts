@@ -142,6 +142,23 @@ export function loadProductFromJson(jsonString: string): CreatePassportFormInput
       return null;
     }
     
+    const traceabilityFromJson: Array<{ event_ref: string; actor?: string; evidence_uri?: string }> | undefined =
+      Array.isArray(data.traceability)
+        ? data.traceability
+            .map((t: any) => {
+              if (typeof t === 'string') return { event_ref: t };
+              if (!t || typeof t !== 'object') return null;
+              const eventRef = String(t.event_ref || t.eventReference || t.ref || '').trim();
+              if (!eventRef) return null;
+              const actor = t.actor ? String(t.actor).trim() : undefined;
+              const evidenceUri = t.evidence_uri ? String(t.evidence_uri).trim() : undefined;
+              return { event_ref: eventRef, ...(actor ? { actor } : {}), ...(evidenceUri ? { evidence_uri: evidenceUri } : {}) };
+            })
+            .filter(Boolean)
+        : Array.isArray(data.dte)
+        ? data.dte.map((v: any) => ({ event_ref: String(v).trim() })).filter((t: any) => !!t.event_ref)
+        : undefined;
+
     return {
       productId: data.productId,
       productName: data.productName,
@@ -156,6 +173,7 @@ export function loadProductFromJson(jsonString: string): CreatePassportFormInput
         facility: data.manufacturer.facility,
       },
       annexIII: data.annexIII,
+      ...(traceabilityFromJson && traceabilityFromJson.length > 0 ? { traceability: traceabilityFromJson } : {}),
       issuerAddress: '', // Will be filled from wallet
       issuerPublicKey: '', // Will be filled from wallet
       useDidWeb: data.useDidWeb || false,
@@ -181,6 +199,7 @@ export function exportProductToJson(data: CreatePassportFormInput): string {
       serialNumber: data.serialNumber,
       manufacturer: data.manufacturer,
       annexIII: data.annexIII,
+      traceability: data.traceability,
       useDidWeb: data.useDidWeb,
       issuerDid: data.issuerDid,
     },

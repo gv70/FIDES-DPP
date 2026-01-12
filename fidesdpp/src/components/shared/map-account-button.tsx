@@ -1,6 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { txToaster, useTypink, checkBalanceSufficiency } from 'typink';
 import { Button } from '@/components/ui/button';
+import { appendTxLog } from '@/lib/tx/tx-log';
 
 export interface MapAccountButtonProps {
   onSuccess?: () => void;
@@ -30,16 +31,32 @@ export default function MapAccountButton({
 
       await checkBalanceSufficiency(client, connectedAccount.address);
 
+      let capturedTxHash: string | undefined;
       await client.tx.revive
         .mapAccount() // --
         .signAndSend(connectedAccount.address, (progress) => {
           toaster.onTxProgress(progress);
+          try {
+            const h = (progress as any)?.txHash?.toHex?.() || (progress as any)?.txHash?.toString?.() || '';
+            if (h && !capturedTxHash) capturedTxHash = String(h);
+          } catch {
+            // ignore
+          }
 
           if (progress.status.type === 'BestChainBlockIncluded' || progress.status.type === 'Finalized') {
             onSuccess?.();
           }
         })
         .untilFinalized();
+
+      if (capturedTxHash) {
+        appendTxLog({
+          address: connectedAccount.address,
+          action: 'account_map',
+          txHash: capturedTxHash,
+          network: 'assethub-westend',
+        });
+      }
     } catch (error: any) {
       console.error('Error mapping account:', error);
       toaster.onTxError(error);

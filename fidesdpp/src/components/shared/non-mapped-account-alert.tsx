@@ -17,7 +17,7 @@ export function NonMappedAccountAlert() {
   return (
     <Alert variant='warning' className='mb-4'>
       <AlertTriangle className='h-4 w-4' />
-      <AlertTitle>Account Not Mapped</AlertTitle>
+      <AlertTitle>Account not map</AlertTitle>
       <AlertDescription>
         <p className='mb-2'>
           Your account needs to be mapped before interacting with ink! v6 contracts on this network.

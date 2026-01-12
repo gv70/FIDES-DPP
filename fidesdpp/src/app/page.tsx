@@ -50,6 +50,18 @@ export default function Home() {
 
         <Card>
           <CardHeader>
+            <CardTitle>Traceability (DTE)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="text-sm text-muted-foreground">Create UNTP Digital Traceability Events (VC-JWT) and link them resolver-first.</div>
+            <Link className="inline-block text-sm font-medium underline underline-offset-4" href="/traceability">
+              Open Traceability Events
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle>Administration</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">

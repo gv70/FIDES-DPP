@@ -16,6 +16,8 @@ import type { DppContractContractApi } from '@/contracts/types/dpp-contract';
 import { decodeAddress } from '@polkadot/util-crypto';
 import { blake2AsU8a } from '@polkadot/util-crypto';
 import { u8aToHex } from '@polkadot/util';
+import { appendTxLog } from '@/lib/tx/tx-log';
+import { usePilotContext } from '@/hooks/use-pilot-context';
 
 interface PassportTransferModalProps {
   open: boolean;
@@ -27,6 +29,7 @@ interface PassportTransferModalProps {
 export function PassportTransferModal({ open, onOpenChange, tokenId: initialTokenId, onSuccess }: PassportTransferModalProps) {
   const { connectedAccount, client } = useTypink();
   const { activeAddress: contractAddress } = useContractAddress();
+  const { pilotId } = usePilotContext();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [tokenId, setTokenId] = useState(initialTokenId || '');
@@ -100,6 +103,7 @@ export function PassportTransferModal({ open, onOpenChange, tokenId: initialToke
     setIsLoading(true);
     setError('');
     const toaster = txToaster();
+    let capturedTxHash: string | undefined;
 
     try {
       const tokenIdBigInt = BigInt(tokenId);
@@ -122,10 +126,26 @@ export function PassportTransferModal({ open, onOpenChange, tokenId: initialToke
 
       await tx
         .signAndSend(connectedAccount.address, (progress: any) => {
+          try {
+            const h = progress?.txHash?.toHex?.() || progress?.txHash?.toString?.() || '';
+            if (h && !capturedTxHash) capturedTxHash = String(h);
+          } catch {
+            // ignore
+          }
           toaster.onTxProgress(progress);
         })
         .untilFinalized();
 
+      if (capturedTxHash) {
+        appendTxLog({
+          address: connectedAccount.address,
+          action: 'passport_transfer',
+          tokenId,
+          txHash: capturedTxHash,
+          network: 'assethub-westend',
+          pilotId: pilotId || undefined,
+        });
+      }
       toast.success(`Passport ${tokenId} transferred`);
       onOpenChange(false);
       onSuccess?.();

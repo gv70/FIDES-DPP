@@ -52,10 +52,12 @@ export interface IdrResponse {
 export class IdrService {
   private baseUrl: string;
   private anagraficaService?: any; // AnagraficaService (optional)
+  private dteIndexStorage?: any;
 
-  constructor(baseUrl?: string, anagraficaService?: any) {
+  constructor(baseUrl?: string, anagraficaService?: any, dteIndexStorage?: any) {
     this.baseUrl = baseUrl || process.env.IDR_BASE_URL || 'http://localhost:3000';
     this.anagraficaService = anagraficaService;
+    this.dteIndexStorage = dteIndexStorage;
   }
 
   /**
@@ -316,7 +318,54 @@ export class IdrService {
       }
     }
 
+    // UNTP DTE discovery: link to traceability event credentials for this product identifier.
+    if (this.dteIndexStorage) {
+      try {
+        const { deriveLookupAliases } = await import('../dte/dte-indexing');
+        const candidates: string[] = deriveLookupAliases(productId);
+        const all = (
+          await Promise.all(
+            candidates.map((id: string) => this.dteIndexStorage.listByProductId(id, { limit: 50 }))
+          )
+        ).flat();
+
+        // Group by CID (one DTE VC may contain multiple events)
+        const byCid = new Map<string, { cid: string; gatewayUrl?: string; issuerDid?: string; eventType?: string; eventTime?: string }>();
+        for (const r of all) {
+          const existing = byCid.get(r.dteCid);
+          const eventTime = r.eventTime ? String(r.eventTime) : undefined;
+          if (!existing) {
+            byCid.set(r.dteCid, {
+              cid: r.dteCid,
+              gatewayUrl: r.gatewayUrl,
+              issuerDid: r.issuerDid,
+              eventType: r.eventType,
+              eventTime,
+            });
+          } else {
+            // Keep the latest eventTime if present
+            if (eventTime && (!existing.eventTime || Date.parse(eventTime) > Date.parse(existing.eventTime))) {
+              existing.eventTime = eventTime;
+              existing.eventType = r.eventType || existing.eventType;
+            }
+          }
+        }
+
+        const renderBaseUrl = process.env.RENDER_BASE_URL || this.baseUrl;
+        const dteLinks = Array.from(byCid.values()).map((d) => ({
+          href: `${renderBaseUrl}/api/untp/dte/vc?cid=${encodeURIComponent(d.cid)}`,
+          type: 'application/vc+jwt',
+          title: `Digital Traceability Event${d.eventType ? ` (${d.eventType})` : ''}${d.eventTime ? ` @ ${d.eventTime}` : ''}`,
+        }));
+
+        if (dteLinks.length > 0) {
+          links['untp:dte'] = dteLinks;
+        }
+      } catch (error: any) {
+        console.warn('Failed to resolve DTE links for product linkset:', error.message);
+      }
+    }
+
     return links;
   }
 }
-

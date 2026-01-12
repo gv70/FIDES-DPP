@@ -7,6 +7,8 @@ import {
   FileText, 
   CheckCircle2, 
   Settings,
+  FlaskConical,
+  Route,
   ChevronRight,
   ChevronLeft,
   Home,
@@ -54,6 +56,17 @@ const navItems: NavItem[] = [
       { label: 'Update Passport', href: '/passports#update', icon: Edit },
       { label: 'Revoke Passport', href: '/passports#revoke', icon: XCircle },
       { label: 'Transfer Passport', href: '/passports#transfer', icon: ArrowRightLeft },
+      { label: 'Traceability (DTE)', href: '/traceability', icon: Route },
+    ],
+  },
+  {
+    label: 'Pilot',
+    href: '/pilot',
+    icon: FlaskConical,
+    children: [
+      { label: 'Pilot Mode', href: '/pilot', icon: FlaskConical },
+      { label: 'Traceability (DTE)', href: '/traceability', icon: Route },
+      { label: 'Demo Recap', href: '/pilot/recap', icon: FileText },
     ],
   },
   {
@@ -75,7 +88,7 @@ const navItems: NavItem[] = [
 export function SidebarNav() {
   const pathname = usePathname();
   const [currentHash, setCurrentHash] = useState<string>('');
-  const [expandedItems, setExpandedItems] = useState<string[]>(['/master-data', '/passports', '/administration']);
+  const [expandedItems, setExpandedItems] = useState<string[]>(['/master-data', '/passports', '/pilot', '/administration']);
   const { isMobileOpen, setIsMobileOpen, collapsed, setCollapsed } = useSidebarNav();
   const [isMobile, setIsMobile] = useState(false);
 
