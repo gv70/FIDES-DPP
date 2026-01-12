@@ -14,7 +14,7 @@
  * Setup:
  * 1. Create Pinata account: https://app.pinata.cloud
  * 2. Get JWT and Gateway URL
- * 3. Configure: IPFS_BACKEND=pinata, PINATA_JWT=<jwt>, PINATA_GATEWAY_URL=<gateway>
+ * 3. Configure: IPFS_BACKEND=pinata, PINATA_JWT=<jwt>, NEXT_PUBLIC_PINATA_GATEWAY_URL=<gateway>
  * 
  * @license Apache-2.0
  */
@@ -56,11 +56,11 @@ export class PinataBackend implements IpfsStorageBackend {
   async isAvailable(): Promise<boolean> {
     try {
       await this.ensureInitialized();
-      // Test connection by checking gateway
-      const response = await fetch(`https://${this.gatewayUrl}`, {
-        method: 'HEAD',
-      });
-      return response.ok;
+      // Best-effort reachability check.
+      // Some gateways return 403/404/405 on the root path or for HEAD requests, while still being functional.
+      // Treat any non-5xx response as "available" and only fail on network errors or 5xx.
+      const response = await fetch(`https://${this.gatewayUrl}`, { method: 'HEAD' });
+      return response.status < 500;
     } catch (error) {
       return false;
     }

@@ -118,7 +118,7 @@ export async function getRecommendedBackend(config?: IpfsConfig): Promise<Backen
   throw new Error(
     'No IPFS backend available. Please either:\n' +
     '1. Install and run Kubo (FOSS primary): ipfs init && ipfs daemon\n' +
-    '2. Configure Pinata (optional SaaS): set PINATA_JWT and PINATA_GATEWAY_URL\n' +
+    '2. Configure Pinata (optional SaaS): set PINATA_JWT and NEXT_PUBLIC_PINATA_GATEWAY_URL\n' +
     'Note: Helia is not supported in Next.js production builds.'
   );
 }

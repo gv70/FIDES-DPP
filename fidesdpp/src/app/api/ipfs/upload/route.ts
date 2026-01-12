@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
           hint: backend.getBackendType() === 'kubo' 
             ? 'Make sure Kubo daemon is running: ipfs daemon'
             : backend.getBackendType() === 'pinata'
-            ? 'Check PINATA_JWT and PINATA_GATEWAY_URL environment variables'
+            ? 'Check PINATA_JWT and NEXT_PUBLIC_PINATA_GATEWAY_URL environment variables'
             : 'Check Helia dependencies are installed'
         },
         { status: 503 }
