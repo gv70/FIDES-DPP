@@ -72,6 +72,25 @@ type IssueResponse = {
   message?: string;
 };
 
+type DteVerifyResponse = {
+  valid: boolean;
+  checks?: any;
+  ipfs?: { cid: string; uri: string; backend?: string; retrievedHash?: string } | null;
+  vc?: any;
+  schemaValidation?: any;
+  error?: string;
+  message?: string;
+};
+
+type DteByProductResponse = {
+  productId: string;
+  candidates: string[];
+  count: number;
+  dtes: Array<{ cid: string; uri?: string; gatewayUrl?: string | null }>;
+  error?: string;
+  message?: string;
+};
+
 function normalizeDidWebInput(raw: string): string {
   const value = raw.trim();
   if (!value) return '';
@@ -119,6 +138,7 @@ export default function TraceabilityPage() {
 
   const [loadingPassports, setLoadingPassports] = useState(false);
   const [passports, setPassports] = useState<PassportListItem[]>([]);
+  const [showAllPassports, setShowAllPassports] = useState(false);
   const [selectedTokenId, setSelectedTokenId] = useState<string>('');
   const [selectedDpp, setSelectedDpp] = useState<any | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string>('');
@@ -158,12 +178,16 @@ export default function TraceabilityPage() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [validation, setValidation] = useState<ValidateEventsResponse | null>(null);
   const [issueResult, setIssueResult] = useState<IssueResponse | null>(null);
+  const [verifyResult, setVerifyResult] = useState<DteVerifyResponse | null>(null);
+  const [discoveryResult, setDiscoveryResult] = useState<DteByProductResponse | null>(null);
   const [busy, setBusy] = useState(false);
 
   const walletEvmAddress = useMemo(() => {
     if (!connectedAccount?.address) return '';
     try {
-      return String(toEvmAddress(connectedAccount.address)).toLowerCase();
+      const raw = String(connectedAccount.address).trim();
+      if (raw.startsWith('0x') && raw.length === 42) return raw.toLowerCase();
+      return String(toEvmAddress(raw)).toLowerCase();
     } catch {
       return '';
     }
@@ -177,6 +201,11 @@ export default function TraceabilityPage() {
       return issuer === walletEvmAddress || owner === walletEvmAddress;
     });
   }, [passports, walletEvmAddress]);
+
+  const selectablePassports = useMemo(
+    () => (showAllPassports ? passports : myPassports),
+    [showAllPassports, passports, myPassports]
+  );
 
   useEffect(() => {
     if (!connectedAccount?.address) return;
@@ -350,6 +379,8 @@ export default function TraceabilityPage() {
     setBusy(true);
     setValidation(null);
     setIssueResult(null);
+    setVerifyResult(null);
+    setDiscoveryResult(null);
     setSelectedDpp(null);
     setSelectedProductId('');
     setSelectedProductName('');
@@ -383,6 +414,43 @@ export default function TraceabilityPage() {
       setBusy(false);
     }
   };
+
+  useEffect(() => {
+    const cid = issueResult?.success ? String(issueResult.ipfs?.cid || '').trim() : '';
+    if (!cid) return;
+
+    setVerifyResult(null);
+    setDiscoveryResult(null);
+
+    void (async () => {
+      try {
+        const res = await fetch('/api/untp/dte/verify', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ cid }),
+        });
+        const json = (await res.json()) as DteVerifyResponse;
+        setVerifyResult(json);
+      } catch (e: any) {
+        setVerifyResult({ valid: false, error: e?.message || String(e) });
+      }
+
+      if (!selectedProductId) return;
+      try {
+        const res = await fetch(`/api/untp/dte/by-product?productId=${encodeURIComponent(selectedProductId)}&limit=200`);
+        const json = (await res.json()) as DteByProductResponse;
+        setDiscoveryResult(json);
+      } catch (e: any) {
+        setDiscoveryResult({
+          productId: selectedProductId,
+          candidates: [],
+          count: 0,
+          dtes: [],
+          error: e?.message || String(e),
+        });
+      }
+    })();
+  }, [issueResult, selectedProductId]);
 
   useEffect(() => {
     // Keep issuer DID synced with Pilot Mode if user hasn't typed anything else
@@ -438,7 +506,7 @@ export default function TraceabilityPage() {
       const json = (await res.json()) as IssueResponse;
       setIssueResult(json);
       if (!json.success) throw new Error(json.message || json.error || 'Failed to issue DTE');
-      toast.success('DTE issued and uploaded to IPFS');
+      toast.success('DTE issued');
     } catch (e: any) {
       setIssueResult({ success: false, error: e?.message || String(e) });
       toast.error(e?.message || 'Failed to issue DTE');
@@ -506,15 +574,15 @@ export default function TraceabilityPage() {
               disabled={busy || !connectedAccount?.address}
             >
               <SelectTrigger className='bg-white'>
-                <SelectValue placeholder='Select one of your passports' />
+                <SelectValue placeholder={showAllPassports ? 'Select a passport' : 'Select one of your passports'} />
               </SelectTrigger>
               <SelectContent className='max-h-[340px]'>
-                {myPassports.length === 0 ? (
+                {selectablePassports.length === 0 ? (
                   <SelectItem value='__none__' disabled>
                     No passports found (or list not loaded yet)
                   </SelectItem>
                 ) : (
-                  myPassports.map((it) => (
+                  selectablePassports.map((it) => (
                     <SelectItem key={it.tokenId} value={it.tokenId}>
                       tokenId {it.tokenId} · {String(it.passport.status)} · v{String(it.passport.version)}
                     </SelectItem>
@@ -529,6 +597,37 @@ export default function TraceabilityPage() {
                 <AlertDescription>
                   This page only shows passports where your connected wallet is the issuer or owner. Create a passport first in{' '}
                   <Link className='underline' href='/passports'>/passports</Link> (or switch wallet), then come back here and refresh.
+                  <div className='mt-2 flex flex-wrap gap-2'>
+                    <Button
+                      type='button'
+                      size='sm'
+                      variant='outline'
+                      onClick={() => setShowAllPassports(true)}
+                      disabled={busy}
+                    >
+                      Show all passports
+                    </Button>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {showAllPassports && (
+              <Alert>
+                <AlertTitle>Showing all passports</AlertTitle>
+                <AlertDescription>
+                  This view includes passports created by other issuers. Use it only to unblock selection during testing.
+                  <div className='mt-2 flex flex-wrap gap-2'>
+                    <Button
+                      type='button'
+                      size='sm'
+                      variant='outline'
+                      onClick={() => setShowAllPassports(false)}
+                      disabled={busy}
+                    >
+                      Show only my passports
+                    </Button>
+                  </div>
                 </AlertDescription>
               </Alert>
             )}
@@ -1051,10 +1150,16 @@ export default function TraceabilityPage() {
               <Button type='button' variant='outline' onClick={validate} disabled={busy}>
                 Validate
               </Button>
-              <Button type='button' onClick={issue} disabled={busy}>
+              <Button type='button' onClick={issue} disabled={busy || !selectedProductId}>
                 Issue DTE
               </Button>
             </div>
+
+            {!selectedProductId && (
+              <div className='text-xs text-muted-foreground'>
+                Link a passport first. The DTE will be indexed by the passport product identifier and will appear in the DPP render under "Traceability (DTE)".
+              </div>
+            )}
 
             {validation && (
               <Alert variant={validation.valid ? 'default' : 'destructive'}>
@@ -1079,8 +1184,32 @@ export default function TraceabilityPage() {
                           Gateway: <code>{issueResult.ipfs.gatewayUrl}</code>
                         </div>
                       )}
-                      <div className='text-muted-foreground'>
-                        If the product identifier was included in the event, it will appear automatically in the DPP render under "Traceability (DTE)".
+                      <div className='flex flex-wrap gap-2 pt-1'>
+                        {issueResult.ipfs?.cid && (
+                          <Button asChild type='button' size='sm' variant='outline'>
+                            <Link
+                              href={`/api/untp/dte/vc?cid=${encodeURIComponent(issueResult.ipfs.cid)}`}
+                              target='_blank'
+                              rel='noreferrer'
+                            >
+                              Open VC-JWT
+                            </Link>
+                          </Button>
+                        )}
+                        {issueResult.ipfs?.gatewayUrl && (
+                          <Button asChild type='button' size='sm' variant='outline'>
+                            <Link href={issueResult.ipfs.gatewayUrl} target='_blank' rel='noreferrer'>
+                              Open gateway
+                            </Link>
+                          </Button>
+                        )}
+                        {selectedTokenId && (
+                          <Button asChild type='button' size='sm' variant='outline'>
+                            <Link href={`/render/${encodeURIComponent(selectedTokenId)}`} target='_blank' rel='noreferrer'>
+                              Open linked DPP render
+                            </Link>
+                          </Button>
+                        )}
                       </div>
                     </>
                   ) : (
@@ -1088,6 +1217,75 @@ export default function TraceabilityPage() {
                   )}
                 </AlertDescription>
               </Alert>
+            )}
+
+            {issueResult?.success && issueResult.ipfs?.cid && (
+              <div className='space-y-3 border rounded-lg p-4'>
+                <div className='font-medium'>Event checks</div>
+                <div className='text-xs text-muted-foreground'>
+                  Confirm that the event can be verified and linked back to the selected passport.
+                </div>
+
+                {verifyResult && (
+                  <Alert variant={verifyResult.valid ? 'default' : 'destructive'}>
+                    <AlertTitle>{verifyResult.valid ? 'Checks passed' : 'Checks need attention'}</AlertTitle>
+                    <AlertDescription className='text-xs whitespace-pre-wrap'>
+                      {verifyResult.error || verifyResult.message ? (
+                        verifyResult.message || verifyResult.error
+                      ) : (
+                        <>
+                          <div>
+                            Issuer verification:{' '}
+                            <span className='font-medium'>
+                              {verifyResult.checks?.signature?.passed ? 'OK' : 'FAILED'}
+                            </span>
+                          </div>
+                          <div>
+                            Integrity:{' '}
+                            <span className='font-medium'>
+                              {verifyResult.checks?.integrity?.expectedHash
+                                ? (verifyResult.checks?.integrity?.passed ? 'OK' : 'FAILED')
+                                : 'SKIPPED'}
+                            </span>
+                            {!verifyResult.checks?.integrity?.expectedHash ? (
+                              <span className='text-muted-foreground'> (optional)</span>
+                            ) : null}
+                          </div>
+                          <div>
+                            Data format:{' '}
+                            <span className='font-medium'>
+                              {verifyResult.checks?.schema?.passed ? 'OK' : 'WARNING'}
+                            </span>
+                            {!verifyResult.checks?.schema?.passed ? (
+                              <span className='text-muted-foreground'>
+                                {' '}
+                                (this affects interoperability, not basic linking)
+                              </span>
+                            ) : null}
+                          </div>
+                        </>
+                      )}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {selectedProductId && discoveryResult && (
+                  <Alert variant={discoveryResult.dtes?.some((d) => d.cid === issueResult.ipfs?.cid) ? 'default' : 'destructive'}>
+                    <AlertTitle>
+                      {discoveryResult.dtes?.some((d) => d.cid === issueResult.ipfs?.cid) ? 'Linked to passport' : 'Not linked to passport'}
+                    </AlertTitle>
+                    <AlertDescription className='text-xs whitespace-pre-wrap'>
+                      Passport product identifier: <code>{selectedProductId}</code>
+                      {'\n'}
+                      Related events found: {String(discoveryResult.count ?? 0)}
+                      {'\n'}
+                      {discoveryResult.dtes?.some((d) => d.cid === issueResult.ipfs?.cid)
+                        ? 'This event should appear in the passport render under "Traceability (DTE)".'
+                        : 'This event is not discoverable for the selected passport. Re-issue the event after selecting the passport, or check storage configuration in the current environment.'}
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
             )}
           </div>
         </CardContent>

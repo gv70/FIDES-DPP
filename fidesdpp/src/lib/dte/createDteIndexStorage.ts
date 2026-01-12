@@ -13,7 +13,10 @@ import { FileDteIndexStorage } from './FileDteIndexStorage';
 import { PostgresDteIndexStorage } from './PostgresDteIndexStorage';
 
 export function createDteIndexStorage(): DteIndexStorage {
-  const backend = process.env.STORAGE_BACKEND || 'file';
+  const backendEnv = (process.env.STORAGE_BACKEND || '').trim();
+  const backend =
+    backendEnv ||
+    (process.env.DATABASE_URL ? 'postgres' : 'file');
 
   switch (backend) {
     case 'file': {
@@ -27,4 +30,3 @@ export function createDteIndexStorage(): DteIndexStorage {
       return new FileDteIndexStorage();
   }
 }
-

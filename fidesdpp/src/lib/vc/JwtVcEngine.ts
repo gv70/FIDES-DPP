@@ -8,6 +8,7 @@
  */
 
 import { createVerifiableCredentialJwt, verifyCredential } from 'did-jwt-vc';
+import { SignJWT, importJWK, jwtVerify } from 'jose';
 import { createDidResolver, createKeyDid } from './did-resolver';
 
 // Helper function to extract public key from multibase (for logging/debugging)
@@ -535,8 +536,6 @@ export class JwtVcEngine implements VcEngine {
       }
     }
 
-    const signer = createIssuerSigner(issuerIdentity);
-
     let keyId: string | undefined;
     if (issuerIdentity.method === 'did:web') {
       try {
@@ -559,31 +558,58 @@ export class JwtVcEngine implements VcEngine {
       }
     }
 
-    const issuerOptions: any = {
-      did: issuerIdentity.did,
-      signer,
-      alg: 'EdDSA',
-    };
-    if (keyId) issuerOptions.kid = keyId;
+    // NOTE: did-jwt-vc currently rejects `credentialSubject` arrays (UNTP DTE uses an array).
+    // For DTE we sign a minimal VC-JWT using jose to preserve UNTP schema compatibility.
+    const publicKey = issuerIdentity.signingKey.publicKey;
+    const privateKeySeed = issuerIdentity.signingKey.privateKey;
+    if (!privateKeySeed) {
+      throw new Error('Private key required for did:web signing');
+    }
 
-    const vcJwt = await createVerifiableCredentialJwt(
-      vcPayload,
-      issuerOptions,
-      {
-        exp: options?.expirationDate ? Math.floor(options.expirationDate.getTime() / 1000) : undefined,
-        jti: credentialId,
-      }
-    );
+    const toBase64Url = (input: Uint8Array): string =>
+      Buffer.from(input)
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
 
-    return this.decodeVc(vcJwt);
+    const jwk = {
+      kty: 'OKP',
+      crv: 'Ed25519',
+      x: toBase64Url(publicKey),
+      d: toBase64Url(privateKeySeed),
+    } as const;
+
+    const key = await importJWK(jwk as any, 'EdDSA');
+
+    const iat = Math.floor(Date.now() / 1000);
+    const exp = options?.expirationDate ? Math.floor(options.expirationDate.getTime() / 1000) : undefined;
+
+    let builder = new SignJWT({ vc: vcPayload })
+      .setProtectedHeader({
+        alg: 'EdDSA',
+        typ: 'JWT',
+        ...(keyId ? { kid: keyId } : {}),
+      })
+      .setIssuer(issuerIdentity.did)
+      .setJti(credentialId)
+      .setIssuedAt(iat)
+      .setNotBefore(iat);
+
+    if (exp) {
+      builder = builder.setExpirationTime(exp);
+    }
+
+    const jwt = await builder.sign(key);
+
+    // Keep the same envelope shape used elsewhere in the app (`payload.vc`)
+    return this.decodeVc(jwt);
   }
 
   async verifyDppVc(
     vcJwt: string,
     options?: VerifyOptions & { tokenId?: string }
   ): Promise<VerificationResult> {
-    console.log(`[VC Verification] Starting verification. JWT length: ${vcJwt.length} chars`);
-    
     let issuer: string | undefined;
     
     try {
@@ -600,15 +626,7 @@ export class JwtVcEngine implements VcEngine {
         header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf-8'));
         payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
         issuer = payload.iss || payload.issuer;
-        
-        console.log(`[VC Verification] JWT decoded successfully:`, {
-          header: { alg: header.alg, typ: header.typ, kid: header.kid },
-          payloadIssuer: issuer,
-          payloadIssuanceDate: payload.iat,
-          payloadExpiration: payload.exp,
-        });
       } catch (decodeError: any) {
-        console.error(`[VC Verification] Failed to decode JWT:`, decodeError.message);
         throw new Error(`Invalid JWT format: ${decodeError.message}`);
       }
       
@@ -616,40 +634,15 @@ export class JwtVcEngine implements VcEngine {
         throw new Error('JWT payload missing issuer (iss or issuer field)');
       }
       
-      console.log(`[VC Verification] Resolving DID document for issuer: ${issuer}`);
       const resolution = await this.resolver.resolve(issuer);
       
       if (!resolution.didDocument) {
         const error = resolution.didResolutionMetadata?.error || 'unknown';
         const message = resolution.didResolutionMetadata?.message || 'Failed to resolve DID document';
-        console.error(`[VC Verification] DID resolution failed:`, {
-          error,
-          message,
-          didResolutionMetadata: resolution.didResolutionMetadata,
-        });
         throw new Error(`Failed to resolve DID document for ${issuer}: ${message}`);
       }
       
       const vm = resolution.didDocument.verificationMethod?.[0];
-      console.log(`[VC Verification] DID Document resolved successfully:`, {
-        did: resolution.didDocument.id,
-        verificationMethodCount: resolution.didDocument.verificationMethod?.length || 0,
-        firstVerificationMethod: vm ? {
-          id: vm.id,
-          type: vm.type,
-          controller: vm.controller,
-          hasPublicKeyMultibase: !!vm.publicKeyMultibase,
-          publicKeyMultibase: vm.publicKeyMultibase?.substring(0, 30) + '...',
-          hasPublicKeyJwk: !!vm.publicKeyJwk,
-          publicKeyJwk: vm.publicKeyJwk ? {
-            kty: vm.publicKeyJwk.kty,
-            crv: vm.publicKeyJwk.crv,
-            x: vm.publicKeyJwk.x?.substring(0, 20) + '...',
-          } : null,
-        } : null,
-        assertionMethod: resolution.didDocument.assertionMethod,
-        authentication: resolution.didDocument.authentication,
-      });
       
       if (!vm) {
         throw new Error(`DID document has no verificationMethod`);
@@ -662,9 +655,30 @@ export class JwtVcEngine implements VcEngine {
       if (this.debug) {
         console.log(`[VC] Verifying credential`);
       }
-      const verifiedVC = await verifyCredential(vcJwt, this.resolver, {
-        audience: options?.audience,
-      });
+
+      let verifiedVC: any;
+      try {
+        verifiedVC = await verifyCredential(vcJwt, this.resolver, {
+          audience: options?.audience,
+        });
+      } catch (e: any) {
+        // Fallback for VC payload shapes not supported by did-jwt-vc (e.g., UNTP DTE credentialSubject arrays).
+        const msg = String(e?.message || e || '');
+        if (msg.toLowerCase().includes('credentialsubject') && msg.toLowerCase().includes('array')) {
+          const fallback = await this.verifyJwtWithJose(vcJwt, { audience: options?.audience });
+          return {
+            verified: fallback.verified,
+            issuer: fallback.issuer,
+            issuanceDate: fallback.issuanceDate,
+            expirationDate: fallback.expirationDate,
+            errors: fallback.verified ? [] : fallback.errors,
+            warnings: fallback.warnings,
+            payload: fallback.payload,
+          };
+        }
+        throw e;
+      }
+
       if (this.debug) {
         console.log(`[VC] Verification ok`);
       }
@@ -719,13 +733,6 @@ export class JwtVcEngine implements VcEngine {
         payload: verifiedVC.verifiableCredential,
       };
     } catch (error: any) {
-      console.error(`[VC Verification] Verification failed:`, {
-        error: error.message,
-        stack: error.stack,
-        name: error.name,
-        fullError: error,
-      });
-      
       // Check if error is due to did:web not being hosted
       const errorMessage = error.message || '';
       const isDidWebNotFound = 
@@ -740,7 +747,6 @@ export class JwtVcEngine implements VcEngine {
         const did = didMatch ? didMatch[0] : 'did:web:...';
         const domain = did.replace('did:web:', '');
         
-        console.error(`[VC Verification] DID document not found for: ${did}`);
         return {
           verified: false,
           issuer: did,
@@ -766,15 +772,10 @@ export class JwtVcEngine implements VcEngine {
         errorMessage.includes('signature verification failed');
       
       if (isSignatureError) {
-        console.error(`[VC Verification] Signature verification failed. This usually means:`, {
-          possibleCauses: [
-            'Public key in DID document does not match the private key used to sign',
-            'VerificationMethod format is incompatible with did-jwt-vc',
-            'JWT header kid does not match verificationMethod id',
-            'Algorithm mismatch (expected EdDSA/Ed25519)',
-          ],
-          errorDetails: errorMessage,
-        });
+        // Keep error surface minimal by default; details can be enabled via DEBUG_VC.
+        if (this.debug) {
+          console.warn('[VC] Signature verification failed:', errorMessage);
+        }
       }
 
       return {
@@ -782,6 +783,124 @@ export class JwtVcEngine implements VcEngine {
         issuer: issuer || (error.message?.match(/did:[^\s,]+/) ? error.message.match(/did:[^\s,]+/)![0] : ''),
         issuanceDate: new Date(),
         errors: [error.message || 'Verification failed'],
+        warnings: [],
+        payload: null,
+      };
+    }
+  }
+
+  private async verifyJwtWithJose(
+    vcJwt: string,
+    options?: { audience?: string }
+  ): Promise<{
+    verified: boolean;
+    issuer: string;
+    issuanceDate: Date;
+    expirationDate?: Date;
+    errors: string[];
+    warnings: string[];
+    payload: any;
+  }> {
+    const parts = vcJwt.split('.');
+    if (parts.length !== 3) {
+      return {
+        verified: false,
+        issuer: '',
+        issuanceDate: new Date(),
+        errors: ['Invalid JWT format'],
+        warnings: [],
+        payload: null,
+      };
+    }
+
+    const header = JSON.parse(this.base64UrlDecode(parts[0]));
+    const payload = JSON.parse(this.base64UrlDecode(parts[1]));
+    const issuer = String(payload.iss || payload.issuer || '').trim();
+
+    if (!issuer) {
+      return {
+        verified: false,
+        issuer: '',
+        issuanceDate: new Date(),
+        errors: ['JWT payload missing issuer (iss)'],
+        warnings: [],
+        payload: null,
+      };
+    }
+
+    const resolution = await this.resolver.resolve(issuer);
+    const didDoc: any = resolution.didDocument;
+    if (!didDoc) {
+      return {
+        verified: false,
+        issuer,
+        issuanceDate: new Date(),
+        errors: [`Failed to resolve DID document for ${issuer}`],
+        warnings: [],
+        payload: null,
+      };
+    }
+
+    const kid = header?.kid ? String(header.kid) : undefined;
+    const vms = Array.isArray(didDoc.verificationMethod) ? didDoc.verificationMethod : [];
+    const vm =
+      (kid ? vms.find((m: any) => String(m.id) === kid) : undefined) ||
+      vms[0];
+
+    const jwkFromVm = vm?.publicKeyJwk;
+    const multibase = vm?.publicKeyMultibase ? String(vm.publicKeyMultibase) : '';
+
+    const jwk =
+      jwkFromVm ||
+      (multibase
+        ? {
+            kty: 'OKP',
+            crv: 'Ed25519',
+            x: Buffer.from(extractPublicKeyFromMultibase(multibase))
+              .toString('base64')
+              .replace(/\+/g, '-')
+              .replace(/\//g, '_')
+              .replace(/=+$/g, ''),
+          }
+        : null);
+
+    if (!jwk) {
+      return {
+        verified: false,
+        issuer,
+        issuanceDate: new Date(),
+        errors: ['DID verification method missing publicKeyJwk/publicKeyMultibase'],
+        warnings: [],
+        payload: null,
+      };
+    }
+
+    try {
+      const key = await importJWK(jwk as any, 'EdDSA');
+      const verified = await jwtVerify(vcJwt, key, {
+        issuer,
+        audience: options?.audience,
+        algorithms: ['EdDSA'],
+      });
+
+      const iat = typeof verified.payload.iat === 'number' ? verified.payload.iat : undefined;
+      const exp = typeof verified.payload.exp === 'number' ? verified.payload.exp : undefined;
+
+      return {
+        verified: true,
+        issuer,
+        issuanceDate: iat ? new Date(iat * 1000) : new Date(),
+        expirationDate: exp ? new Date(exp * 1000) : undefined,
+        errors: [],
+        warnings: [],
+        payload: (verified.payload as any).vc || (verified.payload as any),
+      };
+    } catch (e: any) {
+      return {
+        verified: false,
+        issuer,
+        issuanceDate: new Date(),
+        errors: [String(e?.message || e || 'Signature verification failed')],
         warnings: [],
         payload: null,
       };

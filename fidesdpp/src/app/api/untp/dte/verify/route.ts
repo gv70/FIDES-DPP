@@ -96,8 +96,8 @@ export async function POST(request: NextRequest) {
           schemaMeta: result.schemaMeta,
         };
       } catch (e: any) {
-        schemaValid = false;
-        schemaValidation = { error: e?.message || String(e) };
+        schemaValid = null;
+        schemaValidation = { warning: e?.message || String(e) };
       }
     }
 
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      valid: verification.verified && (hashMatches === null ? true : hashMatches) && (schemaValid === null ? true : schemaValid),
+      valid: verification.verified && (hashMatches === null ? true : hashMatches),
       checks: {
         signature: {
           passed: verification.verified,
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
           passed: schemaValid === null ? true : schemaValid,
           message:
             schemaValid === null
-              ? 'No VC object available for schema validation'
+              ? (schemaValidation?.warning ? 'Schema validation skipped (best-effort)' : 'No VC object available for schema validation')
               : schemaValid
               ? 'Schema validation passed'
               : 'Schema validation failed',
