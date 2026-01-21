@@ -2,7 +2,7 @@
  * Configuration for FIDES-DPP contract and network
  */
 
-const DEFAULT_CONTRACT_ADDRESS = '0x6270bcdff0ac0ecbb3d00c7b4d8272780738feba';
+const DEFAULT_CONTRACT_ADDRESS = '0x2b7da3eab6f9660e7bfadc5ea0076e5883b6f11f';
 
 // Contract address on Westend Asset Hub
 // Client: set NEXT_PUBLIC_CONTRACT_ADDRESS in .env.local

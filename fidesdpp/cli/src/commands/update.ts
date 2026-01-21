@@ -19,8 +19,10 @@ export function updateCommand(program: Command) {
     .requiredOption('-a, --account <keyring>', 'Account URI (e.g., //Alice)')
     .option('--backend <type>', 'IPFS backend: kubo, helia, pinata', 'kubo')
     .option('--key-type <type>', 'Key type: ed25519 or sr25519', 'ed25519')
-    .action(async (options) => {
+    .action(async (options, command) => {
       try {
+        const parentOpts = command.parent.opts();
+
         console.log('Updating passport dataset\n');
         console.log(`Token ID: ${options.tokenId}\n`);
 
@@ -39,7 +41,8 @@ export function updateCommand(program: Command) {
         console.log('');
 
         // 3. Validate environment
-        if (!process.env.CONTRACT_ADDRESS) {
+        const contractAddress = parentOpts.contract || process.env.CONTRACT_ADDRESS;
+        if (!contractAddress) {
           throw new Error('CONTRACT_ADDRESS environment variable not set');
         }
 
@@ -49,8 +52,8 @@ export function updateCommand(program: Command) {
 	          ipfsBackend: options.backend,
 	          ipfsNodeUrl: process.env.IPFS_NODE_URL || 'http://127.0.0.1:5001',
 	          ipfsGatewayUrl: process.env.IPFS_GATEWAY_URL || 'http://127.0.0.1:8080',
-	          contractAddress: process.env.CONTRACT_ADDRESS,
-	          rpcUrl: process.env.POLKADOT_RPC_URL || process.env.RPC_URL || 'wss://westend-asset-hub-rpc.polkadot.io',
+	          contractAddress,
+	          rpcUrl: parentOpts.rpc || process.env.POLKADOT_RPC_URL || process.env.RPC_URL || 'wss://westend-asset-hub-rpc.polkadot.io',
 	          enableStatusList: false,
 	          enableAnagrafica: false,
 	        });

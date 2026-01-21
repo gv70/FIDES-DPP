@@ -38,25 +38,25 @@ const navItems: NavItem[] = [
     icon: Home,
   },
   {
-    label: 'Master Data',
+    label: 'Setup',
     href: '/master-data',
     icon: Database,
     children: [
-      { label: 'Account Info', href: '/master-data#account-info', icon: Home },
-      { label: 'Issuer Registration', href: '/master-data#issuer', icon: Upload },
+      { label: 'Your Account', href: '/master-data#account-info', icon: Home },
+      { label: 'Issuing Organization', href: '/master-data#issuer', icon: Upload },
     ],
   },
   {
-    label: 'Passport Management',
+    label: 'Product Passports',
     href: '/passports',
     icon: FileText,
     children: [
-      { label: 'Create Passport', href: '/passports#create', icon: Plus },
-      { label: 'List Passports', href: '/passports#list', icon: List },
-      { label: 'Update Passport', href: '/passports#update', icon: Edit },
-      { label: 'Revoke Passport', href: '/passports#revoke', icon: XCircle },
-      { label: 'Transfer Passport', href: '/passports#transfer', icon: ArrowRightLeft },
-      { label: 'Traceability (DTE)', href: '/traceability', icon: Route },
+      { label: 'Create', href: '/passports#create', icon: Plus },
+      { label: 'Browse', href: '/passports#list', icon: List },
+      { label: 'Update', href: '/passports#update', icon: Edit },
+      { label: 'Revoke', href: '/passports#revoke', icon: XCircle },
+      { label: 'Transfer', href: '/passports#transfer', icon: ArrowRightLeft },
+      { label: 'History Events', href: '/traceability', icon: Route },
     ],
   },
   {
@@ -65,22 +65,22 @@ const navItems: NavItem[] = [
     icon: FlaskConical,
     children: [
       { label: 'Pilot Mode', href: '/pilot', icon: FlaskConical },
-      { label: 'Traceability (DTE)', href: '/traceability', icon: Route },
-      { label: 'Demo Recap', href: '/pilot/recap', icon: FileText },
+      { label: 'History Events', href: '/traceability', icon: Route },
+      { label: 'Demo Outcomes', href: '/pilot/recap', icon: FileText },
     ],
   },
   {
-    label: 'Verification',
+    label: 'Customer Verification',
     href: '/verification',
     icon: CheckCircle2,
   },
   {
-    label: 'Administration',
+    label: 'Advanced (Infrastructure)',
     href: '/administration',
     icon: Settings,
     children: [
-      { label: 'Contract Deployment', href: '/administration#deploy', icon: Upload },
-      { label: 'Fides DPP Contract', href: '/administration#test', icon: Settings },
+      { label: 'Deployment', href: '/administration#deploy', icon: Upload },
+      { label: 'Low-level Tools', href: '/administration#test', icon: Settings },
     ],
   },
 ];
@@ -249,7 +249,7 @@ export function SidebarNav() {
           <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
             {!collapsed && (
               <Link href="/" className="flex items-center gap-2" onClick={() => setIsMobileOpen(false)}>
-                <span className="font-semibold text-sidebar-foreground">Fides DPP Platform</span>
+                <span className="font-semibold text-sidebar-foreground">Fides Product Passports</span>
               </Link>
             )}
             <div className="flex items-center gap-2">

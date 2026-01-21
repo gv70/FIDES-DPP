@@ -51,6 +51,16 @@ export interface ChainAdapter {
      */
     revokePassport(tokenId: string, reason: string | undefined, signerAccount: PolkadotAccount): Promise<TransactionResult>;
     /**
+     * Transfer custody (ownership) of a passport token.
+     *
+     * This is NFT-like ownership transfer and does not change issuer authority.
+     *
+     * @param tokenId - Token ID to transfer
+     * @param to - Destination address (SS58 or 0x... H160)
+     * @param signerAccount - Current token owner (signs transaction)
+     */
+    transferPassport(tokenId: string, to: string, signerAccount: PolkadotAccount): Promise<TransactionResult>;
+    /**
      * Wait for transaction to be included in a block
      *
      * @param txHash - Transaction hash

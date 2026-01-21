@@ -13,7 +13,7 @@ export function MainHeader() {
     <div className='border-b border-gray-200 dark:border-gray-800'>
       <div className='max-w-5xl px-4 mx-auto flex justify-between items-center gap-4 h-16'>
         <Link href='/' className='text-xl font-semibold'>
-          Fides DPP Platform
+          Fides Product Passports
         </Link>
         <div className='flex items-center gap-3'>
           {accounts.length > 0 ? <AccountSelection /> : <WalletSelection />}

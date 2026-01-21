@@ -18,6 +18,8 @@ import { ContractId, deployments } from '@/contracts/deployments';
 import type { DppContractContractApi } from '@/contracts/types/dpp-contract';
 import { appendTxLog } from '@/lib/tx/tx-log';
 import { usePilotContext } from '@/hooks/use-pilot-context';
+import { getIPFSGatewayURL } from '@/lib/ipfs-utils';
+import { PassportTokenLookup } from '@/components/shared/passport-token-lookup';
 
 interface PassportUpdateModalProps {
   open: boolean;
@@ -48,6 +50,7 @@ export function PassportUpdateModal({
   const [currentDpp, setCurrentDpp] = useState<any | null>(null);
   const [error, setError] = useState<string>('');
   const [tokenId, setTokenId] = useState(initialTokenId || '');
+  const [tokenIdInput, setTokenIdInput] = useState('');
   const [issuerDid, setIssuerDid] = useState('');
   const [productName, setProductName] = useState('');
   const [productDescription, setProductDescription] = useState('');
@@ -63,6 +66,86 @@ export function PassportUpdateModal({
   const [advancedPatchJson, setAdvancedPatchJson] = useState('');
   const [advancedPatchError, setAdvancedPatchError] = useState<string>('');
   const [preparedUpdate, setPreparedUpdate] = useState<any | null>(null);
+
+  type UploadedImage = {
+    cid: string;
+    uri: string; // ipfs://<cid>
+    url: string; // gateway URL
+    contentType?: string;
+    name?: string;
+    alt?: string;
+    kind?: 'primary' | 'gallery';
+  };
+
+  const [productImages, setProductImages] = useState<UploadedImage[]>([]);
+  const [imageUploadBusy, setImageUploadBusy] = useState(false);
+
+  const normalizeProductImagesForPublic = (images: UploadedImage[]) =>
+    images
+      .map((img) => {
+        const cid = String(img?.cid || '').trim();
+        if (!cid) return null;
+        const url = String(img?.url || (cid ? getIPFSGatewayURL(cid) : '')).trim();
+        if (!url) return null;
+        return {
+          cid,
+          uri: String(img?.uri || `ipfs://${cid}`),
+          url,
+          contentType: img?.contentType || undefined,
+          name: img?.name || undefined,
+          alt: img?.alt || undefined,
+          kind: img?.kind || 'gallery',
+        } as const;
+      })
+      .filter(Boolean) as Array<{
+      cid: string;
+      uri: string;
+      url: string;
+      contentType?: string;
+      name?: string;
+      alt?: string;
+      kind?: 'primary' | 'gallery';
+    }>;
+
+  const uploadImagesToIpfs = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setImageUploadBusy(true);
+    try {
+      const uploaded: UploadedImage[] = [];
+      for (const file of Array.from(files)) {
+        const fd = new FormData();
+        fd.set('file', file, file.name);
+        const res = await fetch('/api/ipfs/upload', { method: 'POST', body: fd });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.cid || !json?.url) {
+          throw new Error(json?.error || 'Failed to upload image');
+        }
+        uploaded.push({
+          cid: String(json.cid),
+          uri: `ipfs://${String(json.cid)}`,
+          url: String(json.url),
+          contentType: String(json.contentType || file.type || ''),
+          name: String(json.name || file.name || ''),
+          alt: String(file.name || '').replace(/\.[a-z0-9]+$/i, ''),
+          kind: 'gallery',
+        });
+      }
+
+      setProductImages((prev) => {
+        const next = [...prev, ...uploaded];
+        if (!next.some((i) => i.kind === 'primary') && next.length > 0) {
+          next[0] = { ...next[0], kind: 'primary' };
+        }
+        return next;
+      });
+
+      toast.success(`Uploaded ${uploaded.length} image(s)`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to upload images');
+    } finally {
+      setImageUploadBusy(false);
+    }
+  };
 
   const contract = useMemo(() => {
     if (!client) return null;
@@ -86,6 +169,7 @@ export function PassportUpdateModal({
   useEffect(() => {
     if (open) {
       setTokenId(initialTokenId || '');
+      setTokenIdInput('');
       setPassport(null);
       setCurrentDpp(null);
       setError('');
@@ -104,6 +188,8 @@ export function PassportUpdateModal({
       setAdvancedPatchJson('');
       setAdvancedPatchError('');
       setPreparedUpdate(null);
+      setProductImages([]);
+      setImageUploadBusy(false);
     }
   }, [open, initialTokenId]);
 
@@ -113,15 +199,17 @@ export function PassportUpdateModal({
     if (!lockIssuerDid) return;
     if (!initialIssuerDid) return;
     setIssuerDid(normalizeDidWeb(initialIssuerDid));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, lockIssuerDid, initialIssuerDid]);
 
-  // Load passport data when modal opens and tokenId is provided
+  // If the modal is opened with a preselected tokenId (e.g. from list actions),
+  // load immediately. Manual typing should not trigger network calls.
   useEffect(() => {
-    if (open && tokenId && contractAddress) {
-      loadPassport();
-    }
-  }, [open, tokenId, contractAddress]);
+    if (!open) return;
+    if (!initialTokenId) return;
+    if (!contractAddress) return;
+    void loadPassport(initialTokenId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialTokenId, contractAddress]);
 
   // Load current VC/DPP when passport is loaded
   useEffect(() => {
@@ -133,9 +221,15 @@ export function PassportUpdateModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [passport, open, tokenId, contractAddress]);
 
-  const loadPassport = async () => {
+  const loadPassport = async (requestedTokenId?: string) => {
     if (!contractAddress) {
       setError('Contract address not available');
+      return;
+    }
+
+    const resolvedTokenId = String((requestedTokenId ?? tokenId) || '').trim();
+    if (!resolvedTokenId) {
+      setError('Please enter a passport ID');
       return;
     }
 
@@ -147,7 +241,7 @@ export function PassportUpdateModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tokenId,
+          tokenId: resolvedTokenId,
           // rpcUrl is optional; server falls back to POLKADOT_RPC_URL/RPC_URL
           contractAddress,
         }),
@@ -159,6 +253,7 @@ export function PassportUpdateModal({
         throw new Error(data.error || 'Failed to load passport');
       }
 
+      setTokenId(resolvedTokenId);
       setPassport(data.passport);
     } catch (e: any) {
       setError(e.message || 'Failed to load passport');
@@ -212,6 +307,33 @@ export function PassportUpdateModal({
           .filter(Boolean)
           .join('\n');
         setTraceabilityEventRefs(refs);
+
+        const images = Array.isArray((dpp as any)?.annexIII?.public?.productImages)
+          ? (dpp as any).annexIII.public.productImages
+          : [];
+        if (Array.isArray(images) && images.length > 0) {
+          setProductImages(
+            images
+              .map((img: any, idx: number): UploadedImage => {
+                const cid = String(
+                  img?.cid || (typeof img?.uri === 'string' ? String(img.uri).replace(/^ipfs:\/\//, '') : '')
+                ).trim();
+                const url = String(img?.url || (cid ? getIPFSGatewayURL(cid) : '')).trim();
+                return {
+                  cid,
+                  uri: String(img?.uri || (cid ? `ipfs://${cid}` : '')),
+                  url,
+                  contentType: String(img?.contentType || ''),
+                  name: String(img?.name || ''),
+                  alt: String(img?.alt || ''),
+                  kind: img?.kind === 'primary' || idx === 0 ? 'primary' : 'gallery',
+                };
+              })
+              .filter((i) => i.cid && i.url)
+          );
+        } else {
+          setProductImages([]);
+        }
       }
     } catch (e: any) {
       setError(e.message || 'Failed to load VC dataset');
@@ -320,6 +442,7 @@ export function PassportUpdateModal({
         : String(currentDpp?.product?.identifier || '').trim();
 
       if (uniqueProductId) {
+        const imagesForPublic = normalizeProductImagesForPublic(productImages);
         dppPatch.annexIII = {
           public: {
             uniqueProductId,
@@ -328,6 +451,7 @@ export function PassportUpdateModal({
               ...(normalizedManufacturerIdentifier ? { operatorId: normalizedManufacturerIdentifier } : {}),
             },
             issuerDid: normalizedIssuerDid,
+            ...(imagesForPublic.length > 0 ? { productImages: imagesForPublic } : {}),
           },
         };
       }
@@ -441,12 +565,13 @@ export function PassportUpdateModal({
     }
   };
 
-  const handleLoadPassport = () => {
-    if (!tokenId) {
-      setError('Please enter a token ID');
+  const handleLoadPassport = (requested?: string) => {
+    const value = String((requested ?? tokenIdInput) || '').trim();
+    if (!value) {
+      setError('Please enter a passport ID');
       return;
     }
-    loadPassport();
+    void loadPassport(value);
   };
 
   return (
@@ -458,28 +583,45 @@ export function PassportUpdateModal({
 
         {!tokenId ? (
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="update-token-id">Token ID *</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="update-token-id"
-                  placeholder="Enter token ID to update"
-                  value={tokenId}
-                  onChange={(e) => setTokenId(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleLoadPassport()}
-                />
-                <Button onClick={handleLoadPassport} disabled={!tokenId || isLoadingPassport}>
-                  {isLoadingPassport ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Loading...
-                    </>
-                  ) : (
-                    'Load'
-                  )}
-                </Button>
+            <PassportTokenLookup
+              defaultOpen
+              disabled={isLoadingPassport}
+              onResolvedTokenId={(foundTokenId) => {
+                setError('');
+                handleLoadPassport(foundTokenId);
+              }}
+            />
+
+            <details className="bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
+              <summary className="cursor-pointer text-sm font-semibold">Or enter passport ID (technical)</summary>
+              <div className="mt-3 space-y-2">
+                <Label htmlFor="update-token-id" className="text-xs text-muted-foreground">Passport ID</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="update-token-id"
+                    placeholder="Enter passport ID"
+                    value={tokenIdInput}
+                    onChange={(e) => setTokenIdInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault();
+                      handleLoadPassport();
+                    }}
+                  />
+                  <Button onClick={() => handleLoadPassport()} disabled={!tokenIdInput.trim() || isLoadingPassport}>
+                    {isLoadingPassport ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      'Load'
+                    )}
+                  </Button>
+                </div>
               </div>
-            </div>
+            </details>
+
             {error && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
@@ -510,7 +652,7 @@ export function PassportUpdateModal({
             </Alert>
 
             <div className="space-y-2">
-              <Label>Token ID</Label>
+              <Label>Passport ID</Label>
               <div className="p-3 bg-muted rounded-md font-mono text-sm">{tokenId}</div>
             </div>
 
@@ -630,6 +772,120 @@ export function PassportUpdateModal({
                   disabled={isLoading}
                 />
               </div>
+            </div>
+
+            <div className="space-y-3 bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
+              <div className="space-y-1">
+                <div className="text-sm font-semibold">Product images (optional)</div>
+                <div className="text-xs text-muted-foreground">
+                  These are shown on the customer page. Images are uploaded to IPFS and referenced in the passport.
+                </div>
+              </div>
+
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                id="update-product-images"
+                onChange={async (e) => {
+                  const files = e.currentTarget.files;
+                  await uploadImagesToIpfs(files);
+                  e.currentTarget.value = '';
+                }}
+                disabled={isLoading || imageUploadBusy || !connectedAccount}
+              />
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => document.getElementById('update-product-images')?.click()}
+                  disabled={isLoading || imageUploadBusy || !connectedAccount}
+                >
+                  {imageUploadBusy ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    'Upload images'
+                  )}
+                </Button>
+                {productImages.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setProductImages([])}
+                    disabled={isLoading || imageUploadBusy}
+                  >
+                    Remove all
+                  </Button>
+                )}
+              </div>
+
+              {productImages.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No images uploaded yet.</div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {productImages.map((img, idx) => (
+                    <div key={`${img.cid}-${idx}`} className="space-y-2">
+                      <div className="relative">
+                        <img
+                          src={img.url || getIPFSGatewayURL(img.cid)}
+                          alt={img.alt || img.name || 'Product image'}
+                          className="w-full aspect-square object-cover rounded-md border border-gray-200 dark:border-gray-800"
+                        />
+                        {img.kind === 'primary' && (
+                          <div className="absolute top-2 left-2 text-[10px] font-semibold px-2 py-1 rounded-full bg-black/70 text-white">
+                            Cover
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        {img.kind !== 'primary' ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() =>
+                              setProductImages((prev) =>
+                                prev.map((p, i) => ({
+                                  ...p,
+                                  kind: i === idx ? 'primary' : 'gallery',
+                                }))
+                              )
+                            }
+                            disabled={isLoading || imageUploadBusy}
+                          >
+                            Set as cover
+                          </Button>
+                        ) : (
+                          <Button type="button" variant="outline" className="flex-1" disabled>
+                            Cover image
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() =>
+                            setProductImages((prev) => {
+                              const next = prev.filter((_, i) => i !== idx);
+                              if (!next.some((i) => i.kind === 'primary') && next.length > 0) {
+                                next[0] = { ...next[0], kind: 'primary' };
+                              }
+                              return next;
+                            })
+                          }
+                          disabled={isLoading || imageUploadBusy}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">

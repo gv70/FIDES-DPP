@@ -44,7 +44,7 @@ export function ChainInfo({ className = '' }: Props) {
     <Card className={`bg-gray-200/70 dark:bg-white/5 border-none shadow-none gap-4 ${className}`}>
       <CardHeader className='pb-4'>
         <div className='flex items-center justify-between'>
-          <CardTitle className='text-2xl font-medium'>Chain Info</CardTitle>
+          <CardTitle className='text-2xl font-medium'>Network Status</CardTitle>
         </div>
         <p className='text-sm text-muted-foreground'>
           {status === 'Connected'
@@ -110,11 +110,11 @@ export function ChainInfo({ className = '' }: Props) {
 
           {/* Token Section */}
           <div className='flex justify-between items-center px-6 py-4'>
-            <span className='text-sm text-muted-foreground'>Token symbol</span>
+            <span className='text-sm text-muted-foreground'>Network currency</span>
             <span className='text-sm font-medium'>{network.symbol}</span>
           </div>
           <div className='flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-800'>
-            <span className='text-sm text-muted-foreground'>Token decimals</span>
+            <span className='text-sm text-muted-foreground'>Currency decimals</span>
             <span className='text-sm font-mono'>{network.decimals}</span>
           </div>
         </div>

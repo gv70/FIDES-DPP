@@ -14,10 +14,11 @@ import { Contract } from 'dedot/contracts';
 import { ContractId, deployments } from '@/contracts/deployments';
 import type { DppContractContractApi } from '@/contracts/types/dpp-contract';
 import { decodeAddress } from '@polkadot/util-crypto';
-import { blake2AsU8a } from '@polkadot/util-crypto';
+import { keccakAsU8a } from '@polkadot/util-crypto';
 import { u8aToHex } from '@polkadot/util';
 import { appendTxLog } from '@/lib/tx/tx-log';
 import { usePilotContext } from '@/hooks/use-pilot-context';
+import { PassportTokenLookup } from '@/components/shared/passport-token-lookup';
 
 interface PassportTransferModalProps {
   open: boolean;
@@ -69,8 +70,10 @@ export function PassportTransferModal({ open, onOpenChange, tokenId: initialToke
     }
 
     const accountId32 = decodeAddress(raw);
-    const hash = blake2AsU8a(accountId32, 256);
-    const h160 = hash.slice(0, 20);
+    // Match the Asset Hub contracts `Address` (H160) mapping used by backend/CLI:
+    // keccak256(AccountId32)[12..32]
+    const hash = keccakAsU8a(accountId32, 256);
+    const h160 = hash.slice(12);
     return u8aToHex(h160).toLowerCase();
   };
 
@@ -181,16 +184,28 @@ export function PassportTransferModal({ open, onOpenChange, tokenId: initialToke
             </Alert>
           )}
 
-          <div className='space-y-2'>
-            <Label htmlFor='transfer-token-id'>Token ID *</Label>
-            <Input
-              id='transfer-token-id'
-              placeholder='Enter token ID to transfer'
-              value={tokenId}
-              onChange={(e) => setTokenId(e.target.value)}
-              disabled={isLoading}
-            />
-          </div>
+          <PassportTokenLookup
+            defaultOpen
+            disabled={isLoading}
+            onResolvedTokenId={(foundTokenId) => {
+              setError('');
+              setTokenId(foundTokenId);
+            }}
+          />
+
+          <details className='bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-4'>
+            <summary className='cursor-pointer text-sm font-semibold'>Or enter passport ID (technical)</summary>
+            <div className='mt-3 space-y-2'>
+              <Label htmlFor='transfer-token-id' className='text-xs text-muted-foreground'>Passport ID *</Label>
+              <Input
+                id='transfer-token-id'
+                placeholder='Enter passport ID'
+                value={tokenId}
+                onChange={(e) => setTokenId(e.target.value)}
+                disabled={isLoading}
+              />
+            </div>
+          </details>
 
           <div className='space-y-2'>
             <Label htmlFor='transfer-to'>Destination Address *</Label>

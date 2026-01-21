@@ -11,6 +11,8 @@ import { ContractPromise } from '@polkadot/api-contract';
 import type { WeightV2 } from '@polkadot/types/interfaces';
 import { DedotClient, WsProvider as DedotWsProvider } from 'dedot';
 import { Contract } from 'dedot/contracts';
+import { decodeAddress, keccakAsU8a } from '@polkadot/util-crypto';
+import { u8aToHex } from '@polkadot/util';
 import type { DppContractContractApi } from '../../contracts/types/dpp-contract';
 import type { DppContractDppContractV2PassportRecord } from '../../contracts/types/dpp-contract/types';
 import type { 
@@ -163,8 +165,30 @@ export class PolkadotChainAdapter implements ChainAdapter {
       console.log(`[PolkadotChainAdapter]   subjectIdHashArray first 4: [${subjectIdHashArray.slice(0, 4).join(',')}], last 4: [${subjectIdHashArray.slice(-4).join(',')}]`);
     }
     
+    // Estimate required storage deposit and set a limit accordingly.
+    // Some chains (revive/contracts) may treat an absent/too-low limit as 0 and fail with
+    // `StorageDepositLimitExhausted`, so we try to set a sane default automatically.
+    let storageDepositLimit: any = null;
+    try {
+      const dryRun = await (this.contract as any)!.query.registerPassport(
+        signerAccount.address,
+        { gasLimit, storageDepositLimit: null },
+        registration.datasetUri,
+        payloadHashBytesClean,
+        registration.datasetType,
+        granularityVariant,
+        subjectIdHashArray
+      );
+      const sd = dryRun?.storageDeposit;
+      if (sd?.isCharge) {
+        storageDepositLimit = sd.asCharge;
+      }
+    } catch (e) {
+      // Best-effort only; fall back to null.
+    }
+
     const tx = this.contract!.tx.registerPassport(
-      { gasLimit, storageDepositLimit: null },
+      { gasLimit, storageDepositLimit },
       registration.datasetUri,
       payloadHashBytesClean,  // Uint8Array[32] for required [u8;32]
       registration.datasetType,
@@ -173,52 +197,119 @@ export class PolkadotChainAdapter implements ChainAdapter {
     );
     
     // Sign and send
-    const signer = this.createSigner(signerAccount);
     return new Promise<RegisterResult>((resolve, reject) => {
-      tx.signAndSend(
-        signerAccount.address,
-        { signer },
-        async ({ status, events, dispatchError }) => {
-          if (status.isInBlock) {
-            if (dispatchError) {
-              if (dispatchError.isModule) {
-                const decoded = this.api!.registry.findMetaError(dispatchError.asModule);
-                reject(new Error(`Transaction failed: ${decoded.section}.${decoded.name}: ${decoded.docs}`));
-              } else {
-                reject(new Error(`Transaction failed: ${dispatchError.toString()}`));
+      const pair = (signerAccount as any)?.pair;
+      const send = pair
+        ? tx.signAndSend(pair, async (result: any) => {
+            const { status, events, dispatchError } = result || {};
+            if (status.isInBlock) {
+              if (dispatchError) {
+                if (dispatchError.isModule) {
+                  const decoded = this.api!.registry.findMetaError(dispatchError.asModule);
+                  reject(new Error(`Transaction failed: ${decoded.section}.${decoded.name}: ${decoded.docs}`));
+                } else {
+                  reject(new Error(`Transaction failed: ${dispatchError.toString()}`));
+                }
+                return;
               }
-              return;
-            }
-            
-            // Parse PassportRegistered event
-            let tokenId: string | undefined;
-            
-            for (const { event } of events) {
-              if (event.section === 'contracts' && event.method === 'ContractEmitted') {
-                const decoded = this.contract!.abi.decodeEvent(event.data[1] as any);
-                if (decoded.event.identifier === 'PassportRegistered') {
-                  tokenId = decoded.args[0].toString();
-                  break;
+
+              // Parse PassportRegistered event
+              let tokenId: string | undefined;
+
+              for (const { event } of events || []) {
+                if (event.section === 'contracts' && event.method === 'ContractEmitted') {
+                  const decoded = this.contract!.abi.decodeEvent(event.data[1] as any);
+                  if (decoded.event.identifier === 'PassportRegistered') {
+                    tokenId = decoded.args[0].toString();
+                    break;
+                  }
                 }
               }
+
+              if (!tokenId) {
+                // Fallback: infer tokenId from `nextTokenId` (contract counter).
+                // This is more robust across runtimes where event decoding is flaky.
+                try {
+                  tokenId = await this.inferLatestTokenIdFromNextTokenId(signerAccount.address);
+                  console.warn(`[PolkadotChainAdapter] PassportRegistered event not decoded; inferred tokenId=${tokenId}`);
+                } catch (e: any) {
+                  reject(new Error('PassportRegistered event not found'));
+                  return;
+                }
+              }
+
+              const blockNumber = await this.api!.query.system.number();
+
+              resolve({
+                tokenId,
+                txHash: status.asInBlock.toHex(),
+                blockNumber: Number(blockNumber.toString()),
+              });
             }
-            
-            if (!tokenId) {
-              reject(new Error('PassportRegistered event not found'));
-              return;
+          })
+        : tx.signAndSend(
+            signerAccount.address,
+            { signer: this.createSigner(signerAccount) },
+            async ({ status, events, dispatchError }) => {
+              if (status.isInBlock) {
+                if (dispatchError) {
+                  if (dispatchError.isModule) {
+                    const decoded = this.api!.registry.findMetaError(dispatchError.asModule);
+                    reject(new Error(`Transaction failed: ${decoded.section}.${decoded.name}: ${decoded.docs}`));
+                  } else {
+                    reject(new Error(`Transaction failed: ${dispatchError.toString()}`));
+                  }
+                  return;
+                }
+
+                // Parse PassportRegistered event
+                let tokenId: string | undefined;
+
+                for (const { event } of events) {
+                  if (event.section === 'contracts' && event.method === 'ContractEmitted') {
+                    const decoded = this.contract!.abi.decodeEvent(event.data[1] as any);
+                    if (decoded.event.identifier === 'PassportRegistered') {
+                      tokenId = decoded.args[0].toString();
+                      break;
+                    }
+                  }
+                }
+
+                if (!tokenId) {
+                  try {
+                    tokenId = await this.inferLatestTokenIdFromNextTokenId(signerAccount.address);
+                    console.warn(`[PolkadotChainAdapter] PassportRegistered event not decoded; inferred tokenId=${tokenId}`);
+                  } catch (e: any) {
+                    reject(new Error('PassportRegistered event not found'));
+                    return;
+                  }
+                }
+
+                const blockNumber = await this.api!.query.system.number();
+
+                resolve({
+                  tokenId,
+                  txHash: status.asInBlock.toHex(),
+                  blockNumber: Number(blockNumber.toString()),
+                });
+              }
             }
-            
-            const blockNumber = await this.api!.query.system.number();
-            
-            resolve({
-              tokenId,
-              txHash: status.asInBlock.toHex(),
-              blockNumber: Number(blockNumber.toString()),
-            });
-          }
-        }
-      ).catch(reject);
+          );
+
+      Promise.resolve(send).catch(reject);
     });
+  }
+
+  private async inferLatestTokenIdFromNextTokenId(caller: string): Promise<string> {
+    await this.ensureDedotConnected();
+    const result = await this.dedotContract!.query.nextTokenId({
+      caller,
+    });
+    const nextTokenId = BigInt(result.data || 0);
+    if (nextTokenId <= 0n) {
+      throw new Error('nextTokenId is 0');
+    }
+    return String(nextTokenId - 1n);
   }
   
   /**
@@ -315,8 +406,27 @@ export class PolkadotChainAdapter implements ChainAdapter {
     const payloadHashBytesClean = new Uint8Array(Array.from(payloadHashBytes));
     const subjectIdHashArray = subjectIdHashBytes ? Array.from(subjectIdHashBytes) : null;
     
+    let storageDepositLimit: any = null;
+    try {
+      const dryRun = await (this.contract as any)!.query.updateDataset(
+        signerAccount.address,
+        { gasLimit, storageDepositLimit: null },
+        tokenId,
+        datasetUri,
+        payloadHashBytesClean,
+        datasetType,
+        subjectIdHashArray
+      );
+      const sd = dryRun?.storageDeposit;
+      if (sd?.isCharge) {
+        storageDepositLimit = sd.asCharge;
+      }
+    } catch (e) {
+      // Best-effort only; fall back to null.
+    }
+
     const tx = this.contract!.tx.updateDataset(
-      { gasLimit, storageDepositLimit: null },
+      { gasLimit, storageDepositLimit },
       tokenId,          // u128
       datasetUri,       // String
       payloadHashBytesClean, // [u8;32] as Uint8Array
@@ -324,32 +434,56 @@ export class PolkadotChainAdapter implements ChainAdapter {
       subjectIdHashArray, // number[] for Option<[u8;32]> - Polkadot.js may prefer this format
     );
     
-    const signer = this.createSigner(signerAccount);
     return new Promise<TransactionResult>((resolve, reject) => {
-      tx.signAndSend(
-        signerAccount.address,
-        { signer },
-        async ({ status, dispatchError }) => {
-          if (status.isInBlock) {
-            if (dispatchError) {
-              if (dispatchError.isModule) {
-                const decoded = this.api!.registry.findMetaError(dispatchError.asModule);
-                reject(new Error(`Update failed: ${decoded.section}.${decoded.name}: ${decoded.docs}`));
-              } else {
-                reject(new Error(`Update failed: ${dispatchError.toString()}`));
+      const pair = (signerAccount as any)?.pair;
+      const send = pair
+        ? tx.signAndSend(pair, async (result: any) => {
+            const { status, dispatchError } = result || {};
+            if (status.isInBlock) {
+              if (dispatchError) {
+                if (dispatchError.isModule) {
+                  const decoded = this.api!.registry.findMetaError(dispatchError.asModule);
+                  reject(new Error(`Update failed: ${decoded.section}.${decoded.name}: ${decoded.docs}`));
+                } else {
+                  reject(new Error(`Update failed: ${dispatchError.toString()}`));
+                }
+                return;
               }
-              return;
+
+              const blockNumber = await this.api!.query.system.number();
+
+              resolve({
+                txHash: status.asInBlock.toHex(),
+                blockNumber: Number(blockNumber.toString()),
+              });
             }
-            
-            const blockNumber = await this.api!.query.system.number();
-            
-            resolve({
-              txHash: status.asInBlock.toHex(),
-              blockNumber: Number(blockNumber.toString()),
-            });
-          }
-        }
-      ).catch(reject);
+          })
+        : tx.signAndSend(
+            signerAccount.address,
+            { signer: this.createSigner(signerAccount) },
+            async ({ status, dispatchError }) => {
+              if (status.isInBlock) {
+                if (dispatchError) {
+                  if (dispatchError.isModule) {
+                    const decoded = this.api!.registry.findMetaError(dispatchError.asModule);
+                    reject(new Error(`Update failed: ${decoded.section}.${decoded.name}: ${decoded.docs}`));
+                  } else {
+                    reject(new Error(`Update failed: ${dispatchError.toString()}`));
+                  }
+                  return;
+                }
+
+                const blockNumber = await this.api!.query.system.number();
+
+                resolve({
+                  txHash: status.asInBlock.toHex(),
+                  blockNumber: Number(blockNumber.toString()),
+                });
+              }
+            }
+          );
+
+      Promise.resolve(send).catch(reject);
     });
   }
   
@@ -374,32 +508,257 @@ export class PolkadotChainAdapter implements ChainAdapter {
       reason || null
     );
     
-    const signer = this.createSigner(signerAccount);
     return new Promise<TransactionResult>((resolve, reject) => {
-      tx.signAndSend(
-        signerAccount.address,
-        { signer },
-        async ({ status, dispatchError }) => {
-          if (status.isInBlock) {
-            if (dispatchError) {
-              if (dispatchError.isModule) {
-                const decoded = this.api!.registry.findMetaError(dispatchError.asModule);
-                reject(new Error(`Revoke failed: ${decoded.section}.${decoded.name}: ${decoded.docs}`));
-              } else {
-                reject(new Error(`Revoke failed: ${dispatchError.toString()}`));
+      const pair = (signerAccount as any)?.pair;
+      const send = pair
+        ? tx.signAndSend(pair, async (result: any) => {
+            const { status, dispatchError } = result || {};
+            if (status.isInBlock) {
+              if (dispatchError) {
+                if (dispatchError.isModule) {
+                  const decoded = this.api!.registry.findMetaError(dispatchError.asModule);
+                  reject(new Error(`Revoke failed: ${decoded.section}.${decoded.name}: ${decoded.docs}`));
+                } else {
+                  reject(new Error(`Revoke failed: ${dispatchError.toString()}`));
+                }
+                return;
               }
-              return;
+
+              const blockNumber = await this.api!.query.system.number();
+
+              resolve({
+                txHash: status.asInBlock.toHex(),
+                blockNumber: Number(blockNumber.toString()),
+              });
             }
-            
-            const blockNumber = await this.api!.query.system.number();
-            
-            resolve({
-              txHash: status.asInBlock.toHex(),
-              blockNumber: Number(blockNumber.toString()),
-            });
+          })
+        : tx.signAndSend(
+            signerAccount.address,
+            { signer: this.createSigner(signerAccount) },
+            async ({ status, dispatchError }) => {
+              if (status.isInBlock) {
+                if (dispatchError) {
+                  if (dispatchError.isModule) {
+                    const decoded = this.api!.registry.findMetaError(dispatchError.asModule);
+                    reject(new Error(`Revoke failed: ${decoded.section}.${decoded.name}: ${decoded.docs}`));
+                  } else {
+                    reject(new Error(`Revoke failed: ${dispatchError.toString()}`));
+                  }
+                  return;
+                }
+
+                const blockNumber = await this.api!.query.system.number();
+
+                resolve({
+                  txHash: status.asInBlock.toHex(),
+                  blockNumber: Number(blockNumber.toString()),
+                });
+              }
+            }
+          );
+
+      Promise.resolve(send).catch(reject);
+    });
+  }
+
+  /**
+   * Transfer custody (ownership) of a passport token.
+   *
+   * Note: this is an NFT-like ownership transfer and does not change issuer authority.
+   */
+  async transferPassport(
+    tokenId: string,
+    to: string,
+    signerAccount: PolkadotAccount
+  ): Promise<TransactionResult> {
+    await this.ensureConnected();
+
+    const tokenIdBigInt = BigInt(tokenId);
+    const destination = this.toH160(to);
+    const callerH160 = this.toH160(signerAccount.address);
+
+    const gasLimit = this.api!.registry.createType('WeightV2', {
+      refTime: 2_000_000_000,
+      proofSize: 150_000,
+    }) as WeightV2;
+
+    // Best-effort: verify owner (more helpful error before paying fees)
+    try {
+      const ownerResult = await (this.contract as any)!.query.ownerOf(
+        signerAccount.address,
+        { gasLimit, storageDepositLimit: null },
+        tokenIdBigInt
+      );
+
+      const output = ownerResult?.output;
+      let owner: string | null = null;
+
+      // Polkadot.js contract query output can be wrapped in Result/Option-like shapes.
+      // Try to unwrap common patterns without relying on a specific codec type.
+      if (typeof output === 'string') {
+        owner = output;
+      } else if (output && typeof output === 'object') {
+        // Prefer toJSON() output when available (Codec wrappers)
+        if (typeof (output as any).toJSON === 'function') {
+          const json = (output as any).toJSON();
+          if (json && typeof json === 'string') owner = json;
+          if (json && typeof json === 'object') {
+            if ('ok' in json && (json as any).ok) owner = String((json as any).ok);
+            if ('Ok' in json && (json as any).Ok) owner = String((json as any).Ok);
           }
         }
-      ).catch(reject);
+        // ink! Result: { ok: <value> } / { err: ... }
+        if ('ok' in output && (output as any).ok) owner = String((output as any).ok);
+        if ('Ok' in output && (output as any).Ok) owner = String((output as any).Ok);
+        // Option: { isSome, unwrap() }
+        if (!owner && (output as any).isSome && typeof (output as any).unwrap === 'function') {
+          owner = String((output as any).unwrap());
+        }
+        // Last resort
+        if (!owner) owner = JSON.stringify(output);
+      }
+
+      const ownerLower = typeof owner === 'string' ? owner.toLowerCase() : '';
+      const parsedOwner =
+        /^0x[0-9a-f]{40}$/.test(ownerLower)
+          ? ownerLower
+          : /^0x[0-9a-f]{40}$/.test(ownerLower.replace(/^"|"$/g, ''))
+            ? ownerLower.replace(/^"|"$/g, '')
+            : null;
+
+      // If we can't parse an H160 owner, don't block: let the contract enforce ownership.
+      if (parsedOwner && parsedOwner !== callerH160.toLowerCase()) {
+        throw new Error(`Only the token owner can transfer this passport. Owner: ${parsedOwner}`);
+      }
+    } catch (e: any) {
+      throw new Error(e?.message || 'Ownership check failed');
+    }
+
+    // Some runtimes may require a storage deposit limit even for simple calls.
+    // Also, dry-run gives us a better error message than a generic "ContractReverted".
+    let storageDepositLimit: any = null;
+    try {
+      const dryRun = await (this.contract as any)!.query.transfer(
+        signerAccount.address,
+        { gasLimit, storageDepositLimit: null },
+        destination,
+        tokenIdBigInt
+      );
+
+      const result = dryRun?.result;
+      const output = dryRun?.output;
+
+      // Detect revert flags (revive/contracts returns Ok with a "revert" flag set).
+      const flags =
+        (result as any)?.asOk?.flags ??
+        (result as any)?.ok?.flags ??
+        (result as any)?.flags;
+      const flagsBits =
+        (flags as any)?.bits?.toNumber?.() ??
+        (flags as any)?.bits?.toBn?.()?.toNumber?.() ??
+        (flags as any)?.bits ??
+        undefined;
+      const isRevert =
+        Boolean((flags as any)?.isRevert) ||
+        (typeof flagsBits === 'number' ? (flagsBits & 1) === 1 : false);
+
+      // Unwrap common ink! output shapes for Result.
+      const outputJson =
+        output && typeof (output as any).toJSON === 'function'
+          ? (output as any).toJSON()
+          : output;
+
+      const contractErr =
+        (outputJson && typeof outputJson === 'object' && (
+          // ink! Result: { Ok: { Err: ... } } / { ok: { err: ... } }
+          (('Ok' in (outputJson as any)) && (outputJson as any).Ok && typeof (outputJson as any).Ok === 'object' && ('Err' in (outputJson as any).Ok)) ||
+          (('ok' in (outputJson as any)) && (outputJson as any).ok && typeof (outputJson as any).ok === 'object' && ('err' in (outputJson as any).ok))
+        ))
+          ? (
+              ('Ok' in (outputJson as any) && (outputJson as any).Ok?.Err)
+                ? (outputJson as any).Ok.Err
+                : (outputJson as any).ok?.err
+            )
+          : null;
+
+      if ((result as any)?.isErr) {
+        const err = (result as any)?.asErr?.toString?.() ?? String((result as any)?.asErr ?? result);
+        throw new Error(`Transfer dry-run failed: ${err}`);
+      }
+
+      if (isRevert) {
+        const detail = contractErr ? String(contractErr) : (outputJson ? JSON.stringify(outputJson) : 'unknown');
+        throw new Error(`Transfer reverted (dry-run): ${detail}`);
+      }
+
+      if (contractErr) {
+        throw new Error(`Transfer rejected: ${String(contractErr)}`);
+      }
+
+      const sd = dryRun?.storageDeposit;
+      if (sd?.isCharge) {
+        storageDepositLimit = sd.asCharge;
+      }
+    } catch (e: any) {
+      throw new Error(e?.message || 'Transfer dry-run failed');
+    }
+
+    const tx = (this.contract as any)!.tx.transfer(
+      { gasLimit, storageDepositLimit },
+      destination,
+      tokenIdBigInt
+    );
+
+    return new Promise<TransactionResult>((resolve, reject) => {
+      const pair = (signerAccount as any)?.pair;
+      const send = pair
+        ? tx.signAndSend(pair, async (result: any) => {
+            const { status, dispatchError } = result || {};
+            if (status?.isInBlock) {
+              if (dispatchError) {
+                if (dispatchError.isModule) {
+                  const decoded = this.api!.registry.findMetaError(dispatchError.asModule);
+                  reject(new Error(`Transfer failed: ${decoded.section}.${decoded.name}: ${decoded.docs}`));
+                } else {
+                  reject(new Error(`Transfer failed: ${dispatchError.toString()}`));
+                }
+                return;
+              }
+
+              const blockNumber = await this.api!.query.system.number();
+
+              resolve({
+                txHash: status.asInBlock.toHex(),
+                blockNumber: Number(blockNumber.toString()),
+              });
+            }
+          })
+        : tx.signAndSend(
+            signerAccount.address,
+            { signer: this.createSigner(signerAccount) },
+            async ({ status, dispatchError }: any) => {
+              if (status?.isInBlock) {
+                if (dispatchError) {
+                  if (dispatchError.isModule) {
+                    const decoded = this.api!.registry.findMetaError(dispatchError.asModule);
+                    reject(new Error(`Transfer failed: ${decoded.section}.${decoded.name}: ${decoded.docs}`));
+                  } else {
+                    reject(new Error(`Transfer failed: ${dispatchError.toString()}`));
+                  }
+                  return;
+                }
+
+                const blockNumber = await this.api!.query.system.number();
+
+                resolve({
+                  txHash: status.asInBlock.toHex(),
+                  blockNumber: Number(blockNumber.toString()),
+                });
+              }
+            }
+          );
+
+      Promise.resolve(send).catch(reject);
     });
   }
   
@@ -671,5 +1030,33 @@ export class PolkadotChainAdapter implements ChainAdapter {
       this.api = undefined;
       this.contract = undefined;
     }
+  }
+
+  /**
+   * Convert an address to the contract's H160 `Address` type.
+   *
+   * Asset Hub contracts (revive) use H160 for `Address`. When callers provide an SS58
+   * address, map it to H160 using keccak256(AccountId32)[12..32].
+   */
+  private toH160(address: string): string {
+    const raw = String(address || '').trim();
+    if (!raw) throw new Error('Address is required');
+
+    if (/^0x[0-9a-fA-F]{40}$/.test(raw)) {
+      return raw.toLowerCase();
+    }
+
+    const accountId32 = decodeAddress(raw);
+    if (accountId32.length === 20) {
+      return u8aToHex(accountId32).toLowerCase();
+    }
+
+    if (accountId32.length !== 32) {
+      throw new Error(`Unsupported address length: ${accountId32.length}`);
+    }
+
+    const hash = keccakAsU8a(accountId32, 256);
+    const h160 = hash.slice(12);
+    return u8aToHex(h160).toLowerCase();
   }
 }

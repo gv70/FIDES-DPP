@@ -18,18 +18,31 @@ import { readCommand } from './commands/read';
 import { verifyCommand } from './commands/verify';
 import { updateCommand } from './commands/update';
 import { revokeCommand } from './commands/revoke';
+import { transferCommand } from './commands/transfer';
 import { createVcCommand } from './commands/create-vc';
 import { verifyVcCommand } from './commands/verify-vc';
 import { listCommand } from './commands/list';
 import { issuerRegisterCommand } from './commands/issuer-register';
 import { issuerExportCommand } from './commands/issuer-export';
 import { issuerVerifyCommand } from './commands/issuer-verify';
+import { issuerAuthorizeCommand } from './commands/issuer-authorize';
 
 // Load environment variables
-// Try multiple paths to work from both CLI directory and project root
-const projectRoot = path.resolve(__dirname, '../..');
-dotenv.config({ path: path.join(projectRoot, '.env.local') });
-dotenv.config({ path: path.join(projectRoot, '.env') });
+// Try multiple paths to work from both source (tsx) and compiled dist builds.
+// The CLI is typically run from `fidesdpp/`, where `.env.local` lives.
+const candidateRoots = [
+  process.cwd(),
+  path.resolve(process.cwd(), '..'),
+  // When running with tsx from `fidesdpp/cli/src`
+  path.resolve(__dirname, '../../'),
+  // When running compiled from `fidesdpp/cli/dist/cli/src`
+  path.resolve(__dirname, '../../../../'),
+];
+
+for (const root of candidateRoots) {
+  dotenv.config({ path: path.join(root, '.env.local') });
+  dotenv.config({ path: path.join(root, '.env') });
+}
 
 const program = new Command();
 
@@ -78,6 +91,7 @@ const issuer = program.command('issuer').description('Issuer management (did:web
 issuerRegisterCommand(issuer);
 issuerExportCommand(issuer);
 issuerVerifyCommand(issuer);
+issuerAuthorizeCommand(issuer);
 
 // Original commands (for backward compatibility)
 // Register command
@@ -118,6 +132,7 @@ program
 // Update and Revoke commands (new architecture using DppApplicationService)
 updateCommand(program);
 revokeCommand(program);
+transferCommand(program);
 
 // List command
 program

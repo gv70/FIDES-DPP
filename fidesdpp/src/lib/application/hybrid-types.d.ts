@@ -24,6 +24,71 @@ export interface CreatePassportFormInput {
         country?: string;
         facility?: string;
     };
+    /**
+     * Optional Annex III (EU 2024/1781) fields.
+     */
+    annexIII?: {
+        uniqueProductId?: string;
+        gtin?: string;
+        taricCode?: string;
+        complianceDocs?: Array<{
+            type: 'declaration-of-conformity' | 'technical-documentation' | 'conformity-certificate' | 'other';
+            title?: string;
+            url: string;
+            sha256?: string;
+        }>;
+        userInformation?: Array<{
+            type: 'manual' | 'instructions' | 'warnings' | 'safety';
+            title?: string;
+            language?: string;
+            url: string;
+            sha256?: string;
+        }>;
+        otherOperators?: Array<{
+            role: string;
+            operatorId: string;
+        }>;
+        facilities?: Array<{
+            facilityId: string;
+            name?: string;
+            country?: string;
+        }>;
+        importer?: {
+            name?: string;
+            eori?: string;
+            contactEmail?: string;
+            contactPhone?: string;
+            addressCountry?: string;
+        };
+        responsibleEconomicOperator?: {
+            name?: string;
+            operatorId?: string;
+            contactEmail?: string;
+            contactPhone?: string;
+            addressCountry?: string;
+        };
+        /**
+         * Optional product images (uploaded to IPFS).
+         * Stored in the Annex III public section for customer-facing rendering.
+         */
+        productImages?: Array<{
+            cid: string;
+            uri: string;
+            url: string;
+            contentType?: string;
+            name?: string;
+            alt?: string;
+            kind?: 'primary' | 'gallery';
+        }>;
+    };
+    /**
+     * Optional traceability anchors (DTE links).
+     */
+    traceability?: Array<{
+        event_ref: string;
+        actor?: string;
+        evidence_uri?: string;
+    }>;
     issuerAddress: string;
     issuerPublicKey: string;
     network?: string;
@@ -53,6 +118,10 @@ export interface PreparedPassportData {
         productName: string;
         granularityLevel: string;
     };
+    verification?: {
+        key: string;
+        linkTemplate: string;
+    };
 }
 /**
  * Signed data from browser (Phase 2 → Phase 3)
@@ -75,6 +144,8 @@ export interface CreatePassportResult {
     error?: string;
     issuerDidWebStatus?: string;
     warning?: string;
+    registrationData?: any;
+    verifyUrl?: string;
 }
 /**
  * In-memory store for prepared passport data

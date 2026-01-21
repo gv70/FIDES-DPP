@@ -10,8 +10,8 @@ import { ThemeProvider } from 'next-themes';
 import { SidebarNavProvider } from '@/components/layout/sidebar-nav-provider';
 
 export const metadata: Metadata = {
-  title: 'Fides DPP Platform',
-  description: 'Digital Product Passport platform with on-chain anchoring and off-chain datasets',
+  title: 'Fides Product Passports',
+  description: 'Create and share product passports customers can verify in seconds',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -22,6 +22,10 @@ import { JwtVcEngine } from '@/lib/vc/JwtVcEngine';
 import { validateUntpDte, formatDteValidationErrors } from '@/lib/validation/validateUntpDte';
 import { createDteIndexStorage } from '@/lib/dte/createDteIndexStorage';
 import { buildDteIndexRecords } from '@/lib/dte/dte-indexing';
+import { enforceDteAllowlist } from '@/lib/dte/allowlist';
+import { getDidWebManager } from '@/lib/vc/did-web-manager';
+import { resolveTokenIdForProductClass, readIssuerH160ByTokenId } from '@/lib/passports/issuer-resolution';
+import { getTrustedSupplierDidsFromIssuer, resolveManufacturerDidByH160 } from '@/lib/issuer/trusted-suppliers';
 
 async function createOptionalStatusListManager(storage: ReturnType<typeof createIpfsBackend>) {
   const enableStatusList = process.env.ENABLE_STATUS_LIST !== 'false';
@@ -82,12 +86,38 @@ export async function POST(request: NextRequest) {
     let schemaValid: boolean | null = null;
     let schemaValidation: any = null;
 
-    const vcObject = verification.payload || null;
-    const schemaUrlFromVc = vcObject?.credentialSchema?.id ? String(vcObject.credentialSchema.id) : undefined;
+    const jwtPayload = verification.payload || null;
+    // did-jwt-vc returns the decoded JWT claims. The actual VC is usually under the "vc" claim.
+    // However, some payloads also include top-level VC fields (issuer, credentialSubject, etc.).
+    const vcObject = (jwtPayload as any)?.vc || jwtPayload || null;
 
-    if (vcObject) {
+    const extractEvents = (raw: any): any[] => {
+      if (Array.isArray(raw)) return raw;
+      if (raw && typeof raw === 'object') return Object.values(raw as any);
+      return [];
+    };
+
+    const credentialSubjectRaw =
+      (vcObject as any)?.credentialSubject ??
+      (jwtPayload as any)?.credentialSubject ??
+      (jwtPayload as any)?.vc?.credentialSubject;
+
+    const extractedEvents = extractEvents(credentialSubjectRaw);
+
+    const normalizedVc =
+      (vcObject as any)?.credentialSubject
+        ? vcObject
+        : extractedEvents.length > 0
+          ? { ...(vcObject as any), credentialSubject: extractedEvents }
+          : vcObject;
+
+    const schemaUrlFromVc = (normalizedVc as any)?.credentialSchema?.id
+      ? String((normalizedVc as any).credentialSchema.id)
+      : undefined;
+
+    if (normalizedVc) {
       try {
-        const result = await validateUntpDte(vcObject, schemaUrlFromVc ? { schemaUrl: schemaUrlFromVc } : undefined);
+        const result = await validateUntpDte(normalizedVc, schemaUrlFromVc ? { schemaUrl: schemaUrlFromVc } : undefined);
         schemaValid = result.valid;
         schemaValidation = {
           valid: result.valid,
@@ -102,11 +132,72 @@ export async function POST(request: NextRequest) {
     }
 
     // Best-effort indexing on verify (useful if the DTE was issued externally)
+    let indexing: { attempted: boolean; records: number; error?: string } = { attempted: false, records: 0 };
     try {
-      const events = Array.isArray(vcObject?.credentialSubject) ? vcObject.credentialSubject : [];
-      const issuerDid = String(vcObject?.issuer?.id || vcObject?.issuer || verification.issuer || '').trim();
-      const credentialId = String(vcObject?.id || '').trim() || String((vcObject as any)?.jti || '').trim();
-      if (events.length > 0 && issuerDid && cid) {
+      const events = extractedEvents;
+      const issuerDid = String(
+        (vcObject as any)?.issuer?.id ||
+          (vcObject as any)?.issuer ||
+          (jwtPayload as any)?.iss ||
+          verification.issuer ||
+          ''
+      ).trim();
+      const credentialId =
+        String((vcObject as any)?.id || '').trim() ||
+        String((jwtPayload as any)?.jti || '').trim() ||
+        String((vcObject as any)?.jti || '').trim();
+      if (issuerDid && cid) {
+        indexing = { attempted: true, records: 0 };
+        if (events.length === 0) {
+          indexing.error = 'No DTE events found in credentialSubject';
+        }
+
+        if (events.length === 0) {
+          // Nothing to index.
+          return NextResponse.json({
+            valid: verification.verified && (hashMatches === null ? true : hashMatches),
+            checks: {
+              signature: {
+                passed: verification.verified,
+                message: verification.verified ? 'VC signature valid' : `VC signature invalid: ${verification.errors.join(', ')}`,
+                warnings: verification.warnings,
+              },
+              integrity: {
+                passed: hashMatches === null ? true : hashMatches,
+                message:
+                  hashMatches === null
+                    ? 'No expectedHash provided (integrity check skipped)'
+                    : hashMatches
+                      ? 'JWT hash matches expectedHash'
+                      : 'JWT hash mismatch',
+                expectedHash: expectedHash || null,
+                computedHash,
+              },
+              schema: {
+                passed: schemaValid === null ? true : schemaValid,
+                message:
+                  schemaValid === null
+                    ? (schemaValidation?.warning ? 'Schema validation skipped (best-effort)' : 'No VC object available for schema validation')
+                    : schemaValid
+                      ? 'Schema validation passed'
+                      : 'Schema validation failed',
+                schemaUrl: schemaUrlFromVc || process.env.UNTP_DTE_SCHEMA_URL || null,
+              },
+            },
+            ipfs: retrieved
+              ? {
+                  cid: retrieved.cid,
+                  uri: `ipfs://${retrieved.cid}`,
+                  backend: storage.getBackendType(),
+                  retrievedHash: retrieved.hash,
+                }
+              : null,
+            indexing,
+            vc: normalizedVc,
+            schemaValidation,
+          });
+        }
+
         const dteIndex = createDteIndexStorage();
         const records = buildDteIndexRecords(events, {
           issuerDid,
@@ -114,11 +205,39 @@ export async function POST(request: NextRequest) {
           dteCid: cid,
         });
         if (records.length > 0) {
+          const referencedProductIds = Array.from(new Set(records.map((r) => r.productId)));
+
+          const manager = getDidWebManager();
+          await manager.reload();
+          const issuers = await manager.listIssuers();
+
+          const resolveManufacturerDidByProductId = async (productId: string): Promise<string | null> => {
+            const tokenId = await resolveTokenIdForProductClass(productId);
+            if (!tokenId) return null;
+            const manufacturerIssuerH160 = await readIssuerH160ByTokenId({ tokenId });
+            if (!manufacturerIssuerH160) return null;
+            return resolveManufacturerDidByH160({ manufacturerIssuerH160, issuers });
+          };
+
+          const getTrustedSupplierDidsForManufacturerDid = async (manufacturerDid: string): Promise<string[]> => {
+            const identity = await manager.getIssuerIdentity(manufacturerDid);
+            return getTrustedSupplierDidsFromIssuer(identity);
+          };
+
+          await enforceDteAllowlist({
+            supplierDid: issuerDid,
+            productIds: referencedProductIds,
+            resolveManufacturerDidByProductId,
+            getTrustedSupplierDidsForManufacturerDid,
+          });
+
+          indexing.records = records.length;
           await dteIndex.upsertMany(records);
         }
       }
     } catch (e: any) {
       console.warn('[DTE verify] Indexing failed (continuing):', e?.message || String(e));
+      indexing = { attempted: true, records: indexing.records || 0, error: e?.message || String(e) };
     }
 
     return NextResponse.json({
@@ -159,7 +278,8 @@ export async function POST(request: NextRequest) {
             retrievedHash: retrieved.hash,
           }
         : null,
-      vc: vcObject,
+      indexing,
+      vc: normalizedVc,
       schemaValidation,
     });
   } catch (error: any) {

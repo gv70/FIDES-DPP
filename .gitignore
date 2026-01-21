@@ -52,6 +52,8 @@ dpp_contract/TESTING_GUIDE.md
 TESTING.md
 compliance_raccomandtion.md
 typink.md
+pitch.md
+COMPLIANCE_MATRIX.md
 my_contract/
 pinata-docs/
 kubo/
@@ -130,6 +132,12 @@ fidesdpp/data/issuers.json*
 fidesdpp/data/issuers.test.json
 fidesdpp/data/status-lists.json
 fidesdpp/out-well-known/
+
+# Local CLI demo artifacts (do not commit)
+scripts/e2e-cli-demo.sh
+fidesdpp/examples/
+fidesdpp/my-dpp*.json
+fidesdpp/did.json
 
 # CLI build artifacts
 fidesdpp/cli/dist/

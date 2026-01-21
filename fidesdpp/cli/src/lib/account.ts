@@ -13,6 +13,12 @@ export interface PolkadotAccount {
   address: string;
   publicKey: Uint8Array;
   sign: (data: Uint8Array) => Promise<Uint8Array>;
+  /**
+   * Optional keyring pair (when loaded from local keyring).
+   * When present, on-chain operations can use `signAndSend(pair)` to let
+   * polkadot-js encode MultiSignature correctly.
+   */
+  pair?: unknown;
 }
 
 /**
@@ -37,13 +43,31 @@ export async function loadPolkadotAccount(
   // Create keyring with specified key type
   const keyring = new Keyring({ type: keyType });
 
+  const normalizeSecretUri = (value: unknown): string => {
+    let v = String(value ?? '').trim();
+    if (!v) return '';
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+      v = v.slice(1, -1).trim();
+    }
+    return v.trim();
+  };
+
+  const normalizedUri =
+    normalizeSecretUri(accountUri) || normalizeSecretUri(process.env.DPP_ACCOUNT_URI);
+  if (!normalizedUri) {
+    throw new Error(
+      'Missing account URI. Provide `--account "<mnemonic|//Alice|0x...>"` or set `DPP_ACCOUNT_URI` in `fidesdpp/.env.local`.'
+    );
+  }
+
   // Add account from URI
-  const pair = keyring.addFromUri(accountUri);
+  const pair = keyring.addFromUri(normalizedUri);
 
   // Return account object compatible with DppApplicationService
   return {
     address: pair.address,
     publicKey: pair.publicKey,
+    pair,
     sign: async (data: Uint8Array): Promise<Uint8Array> => {
       return pair.sign(data);
     },
@@ -75,6 +99,5 @@ export function validateEd25519Account(account: PolkadotAccount): void {
 export function formatAccountInfo(account: PolkadotAccount): string {
   return `Address: ${account.address}\nPublic Key: 0x${Buffer.from(account.publicKey).toString('hex')}`;
 }
-
 
 

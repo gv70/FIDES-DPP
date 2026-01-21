@@ -26,7 +26,7 @@ import type {
   UploadMetadata,
   IpfsConfig 
 } from '../IpfsStorageBackend';
-import { computeJsonHashSync, computeJwtHash } from '../IpfsStorageBackend';
+import { computeBytesHash, computeJsonHashSync, computeJwtHash } from '../IpfsStorageBackend';
 
 // Dynamic import to avoid bundling when not needed
 let PinataSDK: any = null;
@@ -162,6 +162,27 @@ export class PinataBackend implements IpfsStorageBackend {
     const upload = await this.pinata.upload.public.file(file);
     
     // 4. Get gateway URL
+    const url = await this.pinata.gateways.public.convert(upload.cid);
+
+    return {
+      cid: upload.cid,
+      hash,
+      gatewayUrl: url,
+      size: upload.size,
+    };
+  }
+
+  async uploadBytes(bytes: Uint8Array, metadata?: UploadMetadata): Promise<UploadResult> {
+    await this.ensureInitialized();
+
+    const hash = computeBytesHash(bytes);
+    const contentType = metadata?.contentType || 'application/octet-stream';
+    const name = metadata?.name || 'file.bin';
+
+    const blob = new Blob([Buffer.from(bytes)], { type: contentType });
+    const file = new File([blob], name, { type: contentType });
+
+    const upload = await this.pinata.upload.public.file(file);
     const url = await this.pinata.gateways.public.convert(upload.cid);
 
     return {

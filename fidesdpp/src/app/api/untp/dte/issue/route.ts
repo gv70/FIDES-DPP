@@ -139,6 +139,19 @@ export async function POST(request: NextRequest) {
 
     // Resolver-first traceability: index this DTE by referenced product identifiers.
     // This enables IDR discovery without updating the DPP VC for every new event.
+    const indexing: {
+      attempted: boolean;
+      backend: 'postgres' | 'file';
+      records: number;
+      error?: string;
+    } = {
+      attempted: true,
+      backend: (process.env.STORAGE_BACKEND || '').trim()
+        ? ((process.env.STORAGE_BACKEND || '').trim() === 'postgres' ? 'postgres' : 'file')
+        : (process.env.DATABASE_URL ? 'postgres' : 'file'),
+      records: 0,
+    };
+
     try {
       const credentialId =
         (vcEnvelope.payload as any)?.jti ||
@@ -153,12 +166,15 @@ export async function POST(request: NextRequest) {
         gatewayUrl: upload.gatewayUrl,
       });
 
+      indexing.records = records.length;
+
       if (records.length > 0) {
         const dteIndex = createDteIndexStorage();
         await dteIndex.upsertMany(records);
       }
     } catch (indexError: any) {
       console.warn('[DTE issue] Failed to index DTE (continuing):', indexError.message);
+      indexing.error = indexError?.message || String(indexError);
     }
 
     return NextResponse.json({
@@ -174,6 +190,7 @@ export async function POST(request: NextRequest) {
         size: upload.size,
         hash: upload.hash,
       },
+      indexing,
       vc: vcEnvelope.payload?.vc || null,
     });
   } catch (error: any) {

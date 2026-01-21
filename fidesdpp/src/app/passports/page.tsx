@@ -30,9 +30,34 @@ export default function PassportsPage() {
       if (hash === '#transfer') setTransferModalOpen(true);
     };
 
+    // Next.js navigation to a URL that only differs by hash does not always
+    // trigger the native `hashchange` event. Ensure the handler runs by also
+    // dispatching `hashchange` when history state changes the hash.
+    const originalPushState = window.history.pushState.bind(window.history);
+    const originalReplaceState = window.history.replaceState.bind(window.history);
+
+    const wrapHistory =
+      (fn: typeof window.history.pushState) =>
+      (...args: Parameters<typeof window.history.pushState>) => {
+        const before = window.location.hash;
+        const res = fn(...args);
+        const after = window.location.hash;
+        if (before !== after) {
+          window.dispatchEvent(new Event('hashchange'));
+        }
+        return res;
+      };
+
+    window.history.pushState = wrapHistory(originalPushState);
+    window.history.replaceState = wrapHistory(originalReplaceState);
+
     syncFromHash();
     window.addEventListener('hashchange', syncFromHash);
-    return () => window.removeEventListener('hashchange', syncFromHash);
+    return () => {
+      window.removeEventListener('hashchange', syncFromHash);
+      window.history.pushState = originalPushState;
+      window.history.replaceState = originalReplaceState;
+    };
   }, []);
 
   const clearHashIf = (expected: string) => {
@@ -98,17 +123,35 @@ export default function PassportsPage() {
           </DialogContent>
         </Dialog>
 
-        <Button variant="outline" onClick={() => setUpdateModalOpen(true)}>
+        <Button
+          variant="outline"
+          onClick={() => {
+            window.location.hash = '#update';
+            setUpdateModalOpen(true);
+          }}
+        >
           <Edit className="h-4 w-4 mr-2" />
           Update Passport
         </Button>
 
-        <Button variant="outline" onClick={() => setRevokeModalOpen(true)}>
+        <Button
+          variant="outline"
+          onClick={() => {
+            window.location.hash = '#revoke';
+            setRevokeModalOpen(true);
+          }}
+        >
           <XCircle className="h-4 w-4 mr-2" />
           Revoke Passport
         </Button>
 
-        <Button variant="outline" onClick={() => setTransferModalOpen(true)}>
+        <Button
+          variant="outline"
+          onClick={() => {
+            window.location.hash = '#transfer';
+            setTransferModalOpen(true);
+          }}
+        >
           <ArrowRightLeft className="h-4 w-4 mr-2" />
           Transfer Passport
         </Button>

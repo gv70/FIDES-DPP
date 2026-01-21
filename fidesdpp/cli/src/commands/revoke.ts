@@ -16,8 +16,10 @@ export function revokeCommand(program: Command) {
     .requiredOption('-a, --account <keyring>', 'Account URI (e.g., //Alice)')
     .option('-r, --reason <reason>', 'Revocation reason (optional)')
     .option('--key-type <type>', 'Key type: ed25519 or sr25519', 'ed25519')
-    .action(async (options) => {
+    .action(async (options, command) => {
       try {
+        const parentOpts = command.parent.opts();
+
         console.log('Revoking passport\n');
         console.log(`Token ID: ${options.tokenId}`);
         if (options.reason) {
@@ -32,15 +34,16 @@ export function revokeCommand(program: Command) {
         console.log('');
 
         // 2. Validate environment
-        if (!process.env.CONTRACT_ADDRESS) {
+        const contractAddress = parentOpts.contract || process.env.CONTRACT_ADDRESS;
+        if (!contractAddress) {
           throw new Error('CONTRACT_ADDRESS environment variable not set');
         }
 
         // 3. Create DPP service
         console.log('Initializing DPP service');
         const dppService = createDppService({
-          contractAddress: process.env.CONTRACT_ADDRESS,
-          rpcUrl: process.env.POLKADOT_RPC_URL || process.env.RPC_URL || 'wss://westend-asset-hub-rpc.polkadot.io',
+          contractAddress,
+          rpcUrl: parentOpts.rpc || process.env.POLKADOT_RPC_URL || process.env.RPC_URL || 'wss://westend-asset-hub-rpc.polkadot.io',
           enableStatusList: false,
           enableAnagrafica: false,
         });

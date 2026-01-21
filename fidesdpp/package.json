@@ -19,7 +19,9 @@
     "verify:master-key": "npx tsx scripts/verify-master-key.ts",
     "regenerate:did-json": "npx tsx scripts/regenerate-did-json.ts",
     "clean:generated": "node scripts/clean-generated-src-artifacts.cjs",
-    "cli": "npx tsx scripts/run-cli.ts"
+    "cli": "node scripts/run-cli.cjs",
+    "cli:tsx": "npx tsx scripts/run-cli.ts",
+    "check:env": "npx tsx scripts/check-env.ts"
   },
   "dependencies": {
     "@4sure-tech/vc-bitstring-status-lists": "^0.1.0",

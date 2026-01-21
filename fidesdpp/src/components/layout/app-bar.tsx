@@ -40,7 +40,7 @@ export function AppBar() {
           </button>
 
           <Link href="/" className="flex items-center gap-2">
-            <span className="text-white font-semibold text-lg">Fides DPP Platform</span>
+            <span className="text-white font-semibold text-lg">Fides Product Passports</span>
           </Link>
         </div>
 
@@ -62,5 +62,4 @@ export function AppBar() {
     </header>
   );
 }
-
 

@@ -83,11 +83,21 @@ IPFS_GATEWAY_URL=http://127.0.0.1:8080
 
 ```bash
 # Check Kubo is running
-curl http://127.0.0.1:5001/api/v0/version
+curl -X POST http://127.0.0.1:5001/api/v0/version
 
 # Start FIDES-DPP
 cd fidesdpp
 npm run dev
+```
+
+Windows PowerShell notes:
+
+- `curl` is an alias for `Invoke-WebRequest` and does not support `-X`. Use `curl.exe` or `Invoke-RestMethod`:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:5001/api/v0/version
+# or:
+curl.exe -X POST http://127.0.0.1:5001/api/v0/version
 ```
 
 Navigate to http://localhost:3000 and try creating a passport with IPFS enabled.

@@ -105,7 +105,7 @@ services:
       - POLKADOT_RPC_URL=${POLKADOT_RPC_URL:-wss://westend-asset-hub-rpc.polkadot.io}
       
       # UNTP Schema (remote fetch with SHA-256 pinning)
-      - UNTP_SCHEMA_URL=${UNTP_SCHEMA_URL:-https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.1.json}
+      - UNTP_SCHEMA_URL=${UNTP_SCHEMA_URL:-https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.0.json}
       - UNTP_SCHEMA_SHA256=${UNTP_SCHEMA_SHA256:-}
       
       # Stable URLs for IDR and renderMethod

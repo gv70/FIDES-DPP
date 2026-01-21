@@ -1,8 +1,14 @@
 /**
- * API route for uploading passport data to IPFS
+ * API route for uploading data to IPFS
  * POST /api/ipfs/upload
- * Body: { passportData: object }
- * Returns: { cid: string, hash: string, url: string }
+ *
+ * JSON mode:
+ *  - Body: { passportData: object }
+ *
+ * File mode (multipart/form-data):
+ *  - field: file (File)
+ *
+ * Returns: { cid: string, hash: string, url: string, size: number, backend: string }
  * 
  * Uses configurable backend (Kubo, Helia, or optional Pinata)
  * Backend selection via IPFS_BACKEND environment variable
@@ -15,16 +21,6 @@ import { createIpfsBackend } from "@/lib/ipfs/IpfsStorageFactory";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { passportData } = body;
-
-    if (!passportData || typeof passportData !== "object") {
-      return NextResponse.json(
-        { error: "Invalid passport data. Expected an object." },
-        { status: 400 }
-      );
-    }
-
     // Create backend (factory selects based on IPFS_BACKEND env var)
     const backend = createIpfsBackend();
     
@@ -44,7 +40,55 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Upload to IPFS via configured backend
+    const contentType = request.headers.get('content-type') || '';
+
+    // File upload mode (images/assets)
+    if (contentType.includes('multipart/form-data')) {
+      const form = await request.formData();
+      const file = form.get('file');
+
+      if (!(file instanceof File)) {
+        return NextResponse.json(
+          { error: 'Invalid upload. Expected a file field named "file".' },
+          { status: 400 }
+        );
+      }
+
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const result = await backend.uploadBytes(bytes, {
+        name: file.name || 'file.bin',
+        contentType: file.type || 'application/octet-stream',
+        keyvalues: {
+          type: 'asset',
+          'content-type': file.type || 'application/octet-stream',
+        },
+      });
+
+      return NextResponse.json(
+        {
+          cid: result.cid,
+          hash: result.hash,
+          url: result.gatewayUrl,
+          size: result.size,
+          backend: backend.getBackendType(),
+          name: file.name || undefined,
+          contentType: file.type || undefined,
+        },
+        { status: 200 }
+      );
+    }
+
+    // JSON upload mode (passport payloads)
+    const body = await request.json();
+    const { passportData } = body;
+
+    if (!passportData || typeof passportData !== "object") {
+      return NextResponse.json(
+        { error: "Invalid passport data. Expected an object." },
+        { status: 400 }
+      );
+    }
+
     const result = await backend.uploadJson(passportData, {
       name: `dpp-${passportData.product?.product_id || 'passport'}.json`,
       keyvalues: {

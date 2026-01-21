@@ -21,7 +21,7 @@ import type {
   UploadMetadata,
   IpfsConfig 
 } from '../IpfsStorageBackend';
-import { computeJsonHashSync, computeJwtHash } from '../IpfsStorageBackend';
+import { computeBytesHash, computeJsonHashSync, computeJwtHash } from '../IpfsStorageBackend';
 
 export class KuboBackend implements IpfsStorageBackend {
   private nodeUrl: string;
@@ -160,6 +160,43 @@ export class KuboBackend implements IpfsStorageBackend {
 
     if (!response.ok) {
       throw new Error(`Kubo text upload failed: ${response.status} ${await response.text()}`);
+    }
+
+    const result = await response.json();
+    const cid = result.Hash;
+    const size = parseInt(result.Size, 10);
+
+    return {
+      cid,
+      hash,
+      gatewayUrl: this.getGatewayUrl(cid),
+      size,
+    };
+  }
+
+  async uploadBytes(bytes: Uint8Array, metadata?: UploadMetadata): Promise<UploadResult> {
+    const hash = computeBytesHash(bytes);
+    const contentType = metadata?.contentType || 'application/octet-stream';
+    const filename = metadata?.name || 'file.bin';
+
+    const blob = new Blob([Buffer.from(bytes)], { type: contentType });
+    const formData = new FormData();
+    formData.append('file', blob, filename);
+
+    const addUrl = `${this.nodeUrl}/api/v0/add?pin=true&wrap-with-directory=false`;
+    const headers: HeadersInit = {};
+    if (this.authHeader) {
+      headers['Authorization'] = this.authHeader;
+    }
+
+    const response = await fetch(addUrl, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Kubo binary upload failed: ${response.status} ${await response.text()}`);
     }
 
     const result = await response.json();

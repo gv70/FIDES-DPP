@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createDppService } from '@/lib/factory/createDppService';
 import { CONTRACT_ADDRESS } from '@/lib/config';
+import { resolveProductIdFromDatasetUri } from '@/lib/passports/product-id';
+import { createAnagraficaStorage } from '@/lib/anagrafica/createAnagraficaStorage';
+import { AnagraficaService } from '@/lib/anagrafica/AnagraficaService';
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,7 +29,23 @@ export async function POST(request: NextRequest) {
 
     const passport = await dppService.readPassport(tokenId.toString());
 
-    return NextResponse.json({ success: true, passport });
+    let productId: string | undefined;
+    try {
+      const anagraficaStorage = createAnagraficaStorage();
+      const anagraficaService = new AnagraficaService(anagraficaStorage);
+      const product = await anagraficaService.getStorage().getDppProduct(String(tokenId));
+      productId = product?.productIdentifier || undefined;
+    } catch {
+      productId = undefined;
+    }
+
+    if (!productId && passport?.datasetUri) {
+      const datasetUri = String(passport.datasetUri || '').trim();
+      const datasetType = String(passport.datasetType || '');
+      productId = await resolveProductIdFromDatasetUri({ datasetUri, datasetType });
+    }
+
+    return NextResponse.json({ success: true, passport, productId });
   } catch (error: any) {
     if (error.message?.includes('not found')) {
       return NextResponse.json(

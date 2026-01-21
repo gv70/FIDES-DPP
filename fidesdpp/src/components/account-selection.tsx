@@ -7,7 +7,7 @@ import { formatBalance, useBalances, useTypink } from 'typink';
 import { AccountAvatar } from '@/components/shared/account-avatar';
 import { LogOutIcon } from 'lucide-react';
 
-function ConnectedWallet() {
+function ConnectedProvider() {
   const { connectedWallets } = useTypink();
 
   const connectedWallet = connectedWallets[0];
@@ -68,7 +68,8 @@ export function AccountSelection() {
         </SelectTrigger>
         <SelectContent className='w-80'>
           <div className='p-2'>
-            <ConnectedWallet />
+            <div className='text-xs text-muted-foreground mb-2'>Connected provider</div>
+            <ConnectedProvider />
           </div>
           <SelectSeparator />
           {accounts.map((one) => (
@@ -84,7 +85,7 @@ export function AccountSelection() {
                     <span className='text-xs text-muted-foreground'>{shortenAddress(one.address)}</span>
                   </div>
                   <span className='text-xs text-muted-foreground'>
-                    Balance: {formatBalance(balances[one.address]?.free, network)}
+                    Available balance: {formatBalance(balances[one.address]?.free, network)}
                   </span>
                 </div>
               </div>
@@ -94,7 +95,7 @@ export function AccountSelection() {
           <SelectItem key='logout' value='logout' className='py-2'>
             <div className='flex items-center gap-2'>
               <LogOutIcon className='w-4 h-4' />
-              <span>Logout</span>
+              <span>Disconnect</span>
             </div>
           </SelectItem>
         </SelectContent>

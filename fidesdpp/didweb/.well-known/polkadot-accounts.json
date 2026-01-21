@@ -1,0 +1,12 @@
+{
+  "did": "did:web:localhost%3A8081",
+  "updatedAt": "2026-01-18T00:00:00Z",
+  "accounts": [
+    {
+      "network": "polkadot:westend-asset-hub",
+      "addresses": ["5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+    "5E4NdpTeV6rq24K8GSVT4jVNnPDkgeKk9NtVFt5Jj4JofA49"]
+    }
+  ],
+  "policy": "canIssueDpp"
+}

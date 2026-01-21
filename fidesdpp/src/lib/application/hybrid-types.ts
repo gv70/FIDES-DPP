@@ -95,6 +95,20 @@ export interface CreatePassportFormInput {
       contactPhone?: string;
       addressCountry?: string;
     };
+
+    /**
+     * Optional product images (uploaded to IPFS).
+     * Stored in the Annex III public section for customer-facing rendering.
+     */
+    productImages?: Array<{
+      cid: string;
+      uri: string; // ipfs://<cid>
+      url: string; // gateway URL
+      contentType?: string;
+      name?: string;
+      alt?: string;
+      kind?: 'primary' | 'gallery';
+    }>;
   };
 
   /**

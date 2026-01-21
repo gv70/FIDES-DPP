@@ -8,7 +8,10 @@ export default function VerificationPage() {
     <div className="space-y-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-3xl font-semibold">Verification</h1>
+        <h1 className="text-3xl font-semibold">Verify this product</h1>
+        <p className="text-sm text-muted-foreground mt-2">
+          Confirm the passport matches its digital proof, then open the customer view.
+        </p>
       </div>
 
       {/* Verification Component */}
@@ -18,4 +21,3 @@ export default function VerificationPage() {
     </div>
   );
 }
-

@@ -21,7 +21,7 @@ const mockUntpSchema = {
       minItems: 2,
       prefixItems: [
         { const: 'https://www.w3.org/ns/credentials/v2' },
-        { const: 'https://test.uncefact.org/vocabulary/untp/dpp/0.6.1/' },
+        { const: 'https://test.uncefact.org/vocabulary/untp/dpp/0.6.0/' },
       ],
     },
     type: {
@@ -76,7 +76,7 @@ describe('validateUntpDpp', () => {
   const validPayload = {
     '@context': [
       'https://www.w3.org/ns/credentials/v2',
-      'https://test.uncefact.org/vocabulary/untp/dpp/0.6.1/',
+      'https://test.uncefact.org/vocabulary/untp/dpp/0.6.0/',
     ],
     type: ['VerifiableCredential', 'DigitalProductPassport'],
     id: 'https://example.com/credentials/123',
@@ -349,7 +349,7 @@ describe('clearValidatorCache', () => {
     const validPayload = {
       '@context': [
         'https://www.w3.org/ns/credentials/v2',
-        'https://test.uncefact.org/vocabulary/untp/dpp/0.6.1/',
+        'https://test.uncefact.org/vocabulary/untp/dpp/0.6.0/',
       ],
       type: ['VerifiableCredential'],
       issuer: { id: 'did:key:test', name: 'Test' },

@@ -5,6 +5,9 @@ import { CONTRACT_ADDRESS as DEFAULT_CONTRACT_ADDRESS } from '@/lib/config';
 import type { DppContractContractApi } from '@/contracts/types/dpp-contract';
 import type { FixedBytes } from 'dedot/codecs';
 import dppContractMetadata from '@/contracts/artifacts/dpp_contract/dpp_contract.json';
+import { createAnagraficaStorage } from '@/lib/anagrafica/createAnagraficaStorage';
+import { AnagraficaService } from '@/lib/anagrafica/AnagraficaService';
+import { resolveProductIdFromDatasetUri } from '@/lib/passports/product-id';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -39,13 +42,31 @@ function toHex(bytes: FixedBytes<32> | Uint8Array | string | unknown): string {
   }
 }
 
+async function mapWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>
+): Promise<void> {
+  const queue = [...items];
+  const workers = Array.from({ length: Math.max(1, limit) }).map(async () => {
+    while (queue.length > 0) {
+      const item = queue.shift();
+      if (!item) return;
+      await fn(item);
+    }
+  });
+  await Promise.all(workers);
+}
+
 export async function GET(request: NextRequest) {
   let client: DedotClient | undefined;
+  let anagraficaService: AnagraficaService | undefined;
 
   try {
     const { searchParams } = new URL(request.url);
     const offset = clampInt(searchParams.get('offset'), 0, 0, Number.MAX_SAFE_INTEGER);
     const limit = clampInt(searchParams.get('limit'), DEFAULT_LIMIT, 1, MAX_LIMIT);
+    const resolveProductId = searchParams.get('resolveProductId') === '1';
 
     const contractAddress = searchParams.get('contractAddress') || process.env.CONTRACT_ADDRESS || DEFAULT_CONTRACT_ADDRESS;
     const rpcUrl =
@@ -61,6 +82,15 @@ export async function GET(request: NextRequest) {
 
     const provider = new DedotWsProvider(rpcUrl);
     client = await DedotClient.new(provider);
+
+    // Optional: enrich results with product identifiers from local anagrafica index.
+    // Best-effort only; listing still works without anagrafica.
+    try {
+      const anagraficaStorage = createAnagraficaStorage();
+      anagraficaService = new AnagraficaService(anagraficaStorage);
+    } catch {
+      anagraficaService = undefined;
+    }
 
     let abiJson: unknown = dppContractMetadata;
     if (process.env.CONTRACT_ABI_PATH) {
@@ -90,7 +120,7 @@ export async function GET(request: NextRequest) {
     const start = Math.min(offset, total);
     const endExclusive = Math.min(start + limit, total);
 
-    const items: Array<{ tokenId: string; passport: any }> = [];
+    const items: Array<{ tokenId: string; passport: any; productId?: string }> = [];
 
     for (let token = start; token < endExclusive; token++) {
       const tokenId = String(token);
@@ -105,8 +135,19 @@ export async function GET(request: NextRequest) {
       const passport = result.data;
       if (!passport) continue;
 
+      let productId: string | undefined;
+      if (anagraficaService) {
+        try {
+          const product = await anagraficaService.getStorage().getDppProduct(tokenId);
+          productId = product?.productIdentifier || undefined;
+        } catch {
+          productId = undefined;
+        }
+      }
+
       items.push({
         tokenId,
+        productId,
         passport: {
           tokenId,
           owner,
@@ -122,6 +163,19 @@ export async function GET(request: NextRequest) {
           updatedAt: passport.updatedAt,
         },
       });
+    }
+
+    if (resolveProductId) {
+      const missing = items.filter((it) => !it.productId && it?.passport?.datasetUri);
+      if (missing.length > 0) {
+        await mapWithConcurrency(missing, 5, async (it) => {
+          const datasetUri = String(it?.passport?.datasetUri || '').trim();
+          if (!datasetUri) return;
+          const datasetType = String(it?.passport?.datasetType || '');
+          const resolved = await resolveProductIdFromDatasetUri({ datasetUri, datasetType });
+          if (resolved) it.productId = resolved;
+        });
+      }
     }
 
     return NextResponse.json({

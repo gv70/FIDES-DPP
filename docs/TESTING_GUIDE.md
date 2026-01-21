@@ -1,8 +1,5 @@
 # Testing Guide - FIDES-DPP Milestone 2
 
-**Target Audience**: Developers  
-**Last Updated**: 2025-12-11
-
 This guide provides complete instructions to build, test, and verify all Milestone 2 deliverables from a fresh clone.
 
 ## Prerequisites
@@ -261,11 +258,11 @@ cp fidesdpp/.env.example fidesdpp/.env.local
 
 # Edit .env.local:
 IPFS_BACKEND=kubo
-IPFS_NODE_URL=http://127.0.0.1:5001
-IPFS_GATEWAY_URL=http://127.0.0.1:8080
-CONTRACT_ADDRESS=0x2b7da3eab6f9660e7bfadc5ea0076e5883b6f11f
+IPFS_NODE_URL=http://localhost:5001
+IPFS_GATEWAY_URL=http://localhost:8080
+CONTRACT_ADDRESS=0x5c30b8c8bd26571077eb69969ccf835ccbd3214c
 POLKADOT_RPC_URL=wss://westend-asset-hub-rpc.polkadot.io
-UNTP_SCHEMA_URL=https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.1.json
+UNTP_SCHEMA_URL=https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.0.json
 
 # 4. Start Next.js
 npm run dev
@@ -326,7 +323,7 @@ curl -X POST http://localhost:3000/api/issuer/verify \
   -d '{"domain": "example.com"}'
 
 # Export did.json
-curl "http://localhost:3000/api/issuer/register?domain=example.com" | jq '.instructions.content' > did.json
+curl "http://localhost:3001/api/issuer/register?domain=example.com" | jq '.instructions.content' > did.json
 ```
 
 These endpoints use the same `DppApplicationService` as the CLI, ensuring identical behavior.
@@ -452,14 +449,25 @@ npx tsx cli/verify-token.ts --token-id 5
 # Expected: all checks pass
 
 # 4. Resolve via IDR
-curl http://localhost:3000/idr/products/PROD-001?linkType=linkset
+curl -H 'Accept: application/linkset+json' http://localhost:3000/idr/products/PROD-001
 
-# Expected: JSON linkset with untp:dpp link
+# Expected: JSON linkset (resolvable even before a tokenId exists)
+#
+# If you already know the tokenId, you can include it to get untp:dpp + alternate:
+# curl http://localhost:3000/idr/products/PROD-001?tokenId=5&linkType=linkset
+#
+# Optional language hint:
+# curl 'http://localhost:3000/idr/products/PROD-001?linkType=linkset&language=en'
 
 # 5. Human render
 open http://localhost:3000/render/5
 
 # Expected: HTML page with product info
+
+# Tip: opening the stable IDR URL in a browser:
+# - redirects to /render/{tokenId} when available
+# - otherwise shows a "Passport not available yet" page
+# open http://localhost:3000/idr/products/PROD-001
 ```
 
 **Verification**:
@@ -647,16 +655,16 @@ Create `fidesdpp/.env.local` (recommended):
 
 ```bash
 # Required
-CONTRACT_ADDRESS=0x2b7da3eab6f9660e7bfadc5ea0076e5883b6f11f
+CONTRACT_ADDRESS=0x5c30b8c8bd26571077eb69969ccf835ccbd3214c
 POLKADOT_RPC_URL=wss://westend-asset-hub-rpc.polkadot.io
 
 # IPFS (default: kubo from docker-compose)
 IPFS_BACKEND=kubo
-IPFS_NODE_URL=http://127.0.0.1:5001
-IPFS_GATEWAY_URL=http://127.0.0.1:8080
+IPFS_NODE_URL=http://localhost:5001
+IPFS_GATEWAY_URL=http://localhost:8080
 
 # UNTP Schema
-UNTP_SCHEMA_URL=https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.1.json
+UNTP_SCHEMA_URL=https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.0.json
 UNTP_SCHEMA_SHA256=
 
 # Storage (default: file-based)

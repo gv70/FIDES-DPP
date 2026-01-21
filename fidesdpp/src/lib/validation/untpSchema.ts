@@ -79,7 +79,7 @@ const schemaCache = new Map<string, CachedSchema>();
  */
 const DEFAULT_CONFIG: Required<SchemaLoaderConfig> = {
   url: process.env.UNTP_SCHEMA_URL || 
-       'https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.1.json',
+       'https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.0.json',
   expectedSha256: process.env.UNTP_SCHEMA_SHA256 || '',
   cacheTtlMs: parseInt(process.env.UNTP_SCHEMA_CACHE_TTL_MS || '86400000', 10), // 24 hours
   maxSizeBytes: 5 * 1024 * 1024, // 5 MB

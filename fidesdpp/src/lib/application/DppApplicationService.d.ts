@@ -66,6 +66,12 @@ export declare class DppApplicationService {
      */
     revokePassport(tokenId: string, issuerAccount: PolkadotAccount, reason?: string): Promise<TransactionResult>;
     /**
+     * Transfer custody (ownership) of a passport token.
+     *
+     * This does not change issuer authority. Only the current owner can transfer.
+     */
+    transferPassport(tokenId: string, to: string, ownerAccount: PolkadotAccount): Promise<TransactionResult>;
+    /**
      * Map form input to UNTP DPP structure
      *
      * Includes granularityLevel aligned with UNTP and ESPR Article 10(1)(f).

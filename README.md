@@ -88,6 +88,14 @@ npm install
 npm run dev
 ```
 
+Windows helper (optional):
+
+```powershell
+# From the repo root (FIDES-DPP/)
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\setup-cli.ps1
+```
+
 See [GETTING_STARTED.md](GETTING_STARTED.md) for step-by-step instructions and [fidesdpp/IPFS_SETUP_FOSS.md](fidesdpp/IPFS_SETUP_FOSS.md) for IPFS setup details.
 
 ### Contract build (optional)
@@ -122,25 +130,111 @@ See [GETTING_STARTED.md](GETTING_STARTED.md) for configuration details.
 
 ## Usage Examples
 
-### CLI (from `fidesdpp/`)
+### CLI (recommended entrypoint)
 
 ```bash
 cd fidesdpp
 npm run cli -- --help
 ```
 
-Issuer management:
+#### Quick E2E flow (localhost, did:web)
+
+This project is designed so the CLI reuses the same application layer as the Web UI. For an end-to-end demo with a local `did:web` issuer:
+
+1) Start the web app (it hosts `/.well-known/did.json` in test mode):
+
+```bash
+cd fidesdpp
+FIDES_MODE=test npm run dev
+```
+
+2) Start an IPFS daemon (Kubo) in another terminal (no Docker required). Note the RPC API and Gateway ports from the daemon output.
+
+3) Configure `fidesdpp/.env.local` (not committed). Minimum variables:
+
+- `CONTRACT_ADDRESS`
+- `POLKADOT_RPC_URL` (defaults to Westend Asset Hub if omitted)
+- `IPFS_NODE_URL` and `IPFS_GATEWAY_URL`
+- `DIDWEB_MASTER_KEY_HEX` (required for `did:web` issuer signing)
+- optional: `DPP_ACCOUNT_URI` (so you can run CLI with `--account ""`)
+
+4) Register + authorize + verify the issuer (domain must be URL-encoded when it includes a port):
+
+```bash
+npm run cli -- issuer register --domain localhost%3A3000 --org "Fides CLI demo org"
+npm run cli -- issuer authorize --domain localhost%3A3000 --account "" --key-type sr25519
+npm run cli -- issuer verify --domain localhost%3A3000
+```
+
+5) Create a passport (VC-JWT → IPFS → on-chain anchor):
+
+```bash
+npm run cli -- create-vc --json ./my-create.json --account "" --key-type sr25519 --issuer-did localhost%3A3000 --json-output
+```
+
+Minimal `create-vc` input shape (`./my-create.json`):
+
+```json
+{
+  "productId": "SKU-001",
+  "productName": "Demo product",
+  "productDescription": "Created via CLI",
+  "granularity": "Batch",
+  "batchNumber": "BATCH-2026-0001",
+  "manufacturer": { "name": "Demo Manufacturer", "identifier": "IT-TEST-0001", "country": "IT" }
+}
+```
+
+6) Read / verify:
+
+```bash
+npm run cli -- read --token-id <TOKEN_ID> --ipfs
+npm run cli -- verify --token-id <TOKEN_ID>
+npm run cli -- verify-vc --token-id <TOKEN_ID>
+```
+
+7) Update (new VC version → new IPFS CID → on-chain anchor update):
+
+```bash
+npm run cli -- update --token-id <TOKEN_ID> --json ./my-update.json --account "" --key-type sr25519
+```
+
+Minimal `update` input shape (`./my-update.json`) is JSON-LD *credentialSubject* (not the `create-vc` shape):
+
+```json
+{
+  "@type": "DigitalProductPassport",
+  "granularityLevel": "batch",
+  "product": { "@type": "Product", "identifier": "SKU-001", "name": "Demo product (v2)", "batchNumber": "BATCH-2026-0001" },
+  "manufacturer": { "@type": "Organization", "name": "Demo Manufacturer", "identifier": "IT-TEST-0001", "addressCountry": "IT" }
+}
+```
+
+8) Transfer custody (NFT-like ownership, does not change issuer authority):
+
+```bash
+npm run cli -- transfer --token-id <TOKEN_ID> --to <SS58_ADDRESS> --account "" --key-type sr25519
+```
+
+#### Issuer management (did:web)
 
 ```bash
 npm run cli -- issuer register --domain example.com --org "Example Org"
 npm run cli -- issuer export --domain example.com --out ./did.json
 npm run cli -- issuer verify --domain example.com
+npm run cli -- issuer authorize --domain example.com --address <SS58_ADDRESS>
 ```
 
 Passport verification:
 
 ```bash
 npm run cli -- verify-vc --token-id 5
+```
+
+Custody transfer (NFT-like ownership):
+
+```bash
+npm run cli -- transfer --token-id 5 --to <destinationAddress> --account <keyring>
 ```
 
 See `fidesdpp/cli/README.md` for the full command set.

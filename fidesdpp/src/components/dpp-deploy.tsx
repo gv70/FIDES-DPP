@@ -118,7 +118,7 @@ export function DppDeploy({ noCard = false }: DppDeployProps) {
 
   const handleDeploy = async () => {
     if (!client || !connectedAccount) {
-      setError('Please connect your wallet first');
+      setError('Please connect your account first');
       return;
     }
 
@@ -336,9 +336,9 @@ export function DppDeploy({ noCard = false }: DppDeployProps) {
         {!connectedAccount && (
           <Alert>
             <AlertCircle className='h-4 w-4' />
-            <AlertTitle>Wallet Not Connected</AlertTitle>
+            <AlertTitle>Account Not Connected</AlertTitle>
             <AlertDescription>
-              Please connect your wallet to deploy contracts.
+              Please connect your account to deploy contracts.
             </AlertDescription>
           </Alert>
         )}

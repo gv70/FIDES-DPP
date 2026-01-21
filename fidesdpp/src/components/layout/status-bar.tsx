@@ -39,9 +39,9 @@ export function StatusBar() {
       collapsed ? 'lg:pl-16' : 'lg:pl-64'
     )}>
       <div className="flex items-center gap-4 text-xs text-muted-foreground w-full">
-        {/* Chain Name */}
+        {/* Network Name */}
         <div className="flex items-center gap-2">
-          <span className="font-medium">Chain:</span>
+          <span className="font-medium">Network:</span>
           <span className="font-mono">{network.name || 'Unknown'}</span>
         </div>
 
@@ -55,11 +55,11 @@ export function StatusBar() {
 
         <div className="h-4 w-px bg-[var(--sap-border)]" />
 
-        {/* Block Number */}
+        {/* Block Number (advanced) */}
         {best && (
           <>
             <div className="flex items-center gap-2">
-              <span className="font-medium">Block:</span>
+              <span className="font-medium">Latest block:</span>
               <span className="font-mono">#{best.number?.toLocaleString() || 'N/A'}</span>
             </div>
             <div className="h-4 w-px bg-[var(--sap-border)]" />
@@ -69,7 +69,7 @@ export function StatusBar() {
         {/* Account Balance */}
         {connectedAccount && (
           <div className="flex items-center gap-2">
-            <span className="font-medium">Balance:</span>
+            <span className="font-medium">Account balance:</span>
             <span className="font-mono">{formattedBalance}</span>
           </div>
         )}
@@ -87,6 +87,5 @@ export function StatusBar() {
     </footer>
   );
 }
-
 
 

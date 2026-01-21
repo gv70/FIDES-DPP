@@ -22,6 +22,11 @@ import { testProducts, loadProductFromJson, exportProductToJson, type TestProduc
 import { useTypink } from 'typink';
 import { appendTxLog } from '@/lib/tx/tx-log';
 import { usePilotContext } from '@/hooks/use-pilot-context';
+import { toast } from 'sonner';
+import { getIPFSGatewayURL } from '@/lib/ipfs-utils';
+import { PassportUpdateModal } from '@/components/passport-update-modal';
+import type { IssuerDirectoryEntry } from '@/lib/issuer/issuer-directory';
+import { normalizeH160 } from '@/lib/issuer/issuer-directory';
 
 interface DppHybridCreateProps {
   /** If true, removes Card wrapper (for use in Dialog) */
@@ -41,9 +46,25 @@ export function DppHybridCreate({
   const { connectedAccount } = useTypink();
   const { pilotId } = usePilotContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [inputMode, setInputMode] = useState<'template' | 'upload' | 'manual'>('template');
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [uploadError, setUploadError] = useState<string>('');
+
+  type UploadedImage = {
+    cid: string;
+    uri: string; // ipfs://<cid>
+    url: string; // gateway URL
+    hash: string;
+    size: number;
+    contentType?: string;
+    name?: string;
+    alt?: string;
+    kind?: 'primary' | 'gallery';
+  };
+
+  const [productImages, setProductImages] = useState<UploadedImage[]>([]);
+  const [imageUploadBusy, setImageUploadBusy] = useState(false);
 
   useEffect(() => {
     if (phase !== 'complete') return;
@@ -115,6 +136,76 @@ export function DppHybridCreate({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialIssuerDid, lockIssuerDid]);
 
+  const uploadImagesToIpfs = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setImageUploadBusy(true);
+    try {
+      const uploaded: UploadedImage[] = [];
+      for (const file of Array.from(files)) {
+        const fd = new FormData();
+        fd.set('file', file, file.name);
+        const res = await fetch('/api/ipfs/upload', { method: 'POST', body: fd });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.cid || !json?.url) {
+          throw new Error(json?.error || 'Failed to upload image');
+        }
+
+        uploaded.push({
+          cid: String(json.cid),
+          uri: `ipfs://${String(json.cid)}`,
+          url: String(json.url),
+          hash: String(json.hash || ''),
+          size: Number(json.size || 0),
+          contentType: String(json.contentType || file.type || ''),
+          name: String(json.name || file.name || ''),
+          alt: String(file.name || '').replace(/\.[a-z0-9]+$/i, ''),
+          kind: 'gallery',
+        });
+      }
+
+      setProductImages((prev) => {
+        const next = [...prev, ...uploaded];
+        if (!next.some((i) => i.kind === 'primary') && next.length > 0) {
+          next[0] = { ...next[0], kind: 'primary' };
+        }
+        return next;
+      });
+
+      toast.success(`Uploaded ${uploaded.length} image(s)`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to upload images');
+    } finally {
+      setImageUploadBusy(false);
+    }
+  };
+
+  const normalizeProductImagesForAnnex = (images: UploadedImage[]) =>
+    images
+      .map((img) => {
+        const cid = String(img?.cid || '').trim();
+        if (!cid) return null;
+        const url = String(img?.url || (cid ? getIPFSGatewayURL(cid) : '')).trim();
+        if (!url) return null;
+        return {
+          cid,
+          uri: String(img?.uri || `ipfs://${cid}`),
+          url,
+          contentType: img?.contentType || undefined,
+          name: img?.name || undefined,
+          alt: img?.alt || undefined,
+          kind: img?.kind || 'gallery',
+        } as const;
+      })
+      .filter(Boolean) as Array<{
+      cid: string;
+      uri: string;
+      url: string;
+      contentType?: string;
+      name?: string;
+      alt?: string;
+      kind?: 'primary' | 'gallery';
+    }>;
+
   // Load template product
   const handleTemplateSelect = (templateId: string) => {
     setSelectedTemplate(templateId);
@@ -156,6 +247,36 @@ export function DppHybridCreate({
             ? normalizeDidWebInput(initialIssuerDid)
             : normalizeDidWebInput(template.data.issuerDid || ''),
       });
+      const images = Array.isArray(annex.productImages)
+        ? annex.productImages
+        : Array.isArray(annex.public?.productImages)
+          ? annex.public.productImages
+          : [];
+      if (Array.isArray(images) && images.length > 0) {
+        setProductImages(
+          images
+            .map((img: any, idx: number): UploadedImage => {
+              const cid = String(
+                img?.cid || (typeof img?.uri === 'string' ? String(img.uri).replace(/^ipfs:\/\//, '') : '')
+              ).trim();
+              const url = String(img?.url || (cid ? getIPFSGatewayURL(cid) : '')).trim();
+              return {
+                cid,
+                uri: String(img?.uri || (cid ? `ipfs://${cid}` : '')),
+                url,
+                hash: String(img?.hash || ''),
+                size: Number(img?.size || 0),
+                contentType: String(img?.contentType || ''),
+                name: String(img?.name || ''),
+                alt: String(img?.alt || ''),
+                kind: img?.kind === 'primary' || idx === 0 ? 'primary' : 'gallery',
+              };
+            })
+            .filter((i) => i.cid && i.url)
+        );
+      } else {
+        setProductImages([]);
+      }
       setUploadError('');
     }
   };
@@ -218,6 +339,36 @@ export function DppHybridCreate({
                 ? normalizeDidWebInput(initialIssuerDid)
                 : normalizeDidWebInput(productData.issuerDid || ''),
           });
+          const images = Array.isArray(annex.productImages)
+            ? annex.productImages
+            : Array.isArray(annex.public?.productImages)
+              ? annex.public.productImages
+              : [];
+          if (Array.isArray(images) && images.length > 0) {
+            setProductImages(
+              images
+                .map((img: any, idx: number): UploadedImage => {
+                  const cid = String(
+                    img?.cid || (typeof img?.uri === 'string' ? String(img.uri).replace(/^ipfs:\/\//, '') : '')
+                  ).trim();
+                  const url = String(img?.url || (cid ? getIPFSGatewayURL(cid) : '')).trim();
+                  return {
+                    cid,
+                    uri: String(img?.uri || (cid ? `ipfs://${cid}` : '')),
+                    url,
+                    hash: String(img?.hash || ''),
+                    size: Number(img?.size || 0),
+                    contentType: String(img?.contentType || ''),
+                    name: String(img?.name || ''),
+                    alt: String(img?.alt || ''),
+                    kind: img?.kind === 'primary' || idx === 0 ? 'primary' : 'gallery',
+                  };
+                })
+                .filter((i) => i.cid && i.url)
+            );
+          } else {
+            setProductImages([]);
+          }
           setUploadError('');
           setInputMode('manual'); // Switch to manual mode after upload
         }
@@ -238,6 +389,7 @@ export function DppHybridCreate({
 
     const complianceDocUrls = parseUrls(formData.annexComplianceDocUrls);
     const userInfoUrls = parseUrls(formData.annexUserInfoUrls);
+    const imagesForAnnex = normalizeProductImagesForAnnex(productImages);
     const hasAnnex =
       !!formData.annexGtin ||
       !!formData.annexTaricCode ||
@@ -247,7 +399,8 @@ export function DppHybridCreate({
       !!formData.annexResponsibleName ||
       !!formData.annexResponsibleOperatorId ||
       complianceDocUrls.length > 0 ||
-      userInfoUrls.length > 0;
+      userInfoUrls.length > 0 ||
+      imagesForAnnex.length > 0;
 
     const exportData = {
       productId: formData.productId,
@@ -275,6 +428,9 @@ export function DppHybridCreate({
           }),
           ...(userInfoUrls.length > 0 && {
             userInformation: userInfoUrls.map((url) => ({ type: 'manual', url })),
+          }),
+          ...(imagesForAnnex.length > 0 && {
+            productImages: imagesForAnnex,
           }),
           ...((formData.annexImporterEori ||
             formData.annexImporterName ||
@@ -320,6 +476,7 @@ export function DppHybridCreate({
 
     const complianceDocUrls = parseUrls(formData.annexComplianceDocUrls);
     const userInfoUrls = parseUrls(formData.annexUserInfoUrls);
+    const imagesForAnnex = normalizeProductImagesForAnnex(productImages);
     const hasAnnex =
       !!formData.annexGtin ||
       !!formData.annexTaricCode ||
@@ -329,7 +486,8 @@ export function DppHybridCreate({
       !!formData.annexResponsibleName ||
       !!formData.annexResponsibleOperatorId ||
       complianceDocUrls.length > 0 ||
-      userInfoUrls.length > 0;
+      userInfoUrls.length > 0 ||
+      imagesForAnnex.length > 0;
 
     await createPassport({
       productId: formData.productId,
@@ -354,6 +512,9 @@ export function DppHybridCreate({
           taricCode: formData.annexTaricCode || undefined,
           complianceDocs: complianceDocUrls.map((url) => ({ type: 'other', url })),
           userInformation: userInfoUrls.map((url) => ({ type: 'manual', url })),
+          ...(imagesForAnnex.length > 0 && {
+            productImages: imagesForAnnex,
+          }),
           ...((formData.annexImporterEori ||
             formData.annexImporterName ||
             formData.annexImporterCountry) && {
@@ -378,6 +539,42 @@ export function DppHybridCreate({
   };
 
   const isLoading = phase === 'preparing' || phase === 'signing' || phase === 'finalizing';
+  const existingTokenIdMatch = typeof error === 'string' ? error.match(/Passport ID:\s*(\d+)/i) : null;
+  const existingTokenId = existingTokenIdMatch?.[1] || '';
+  const [updateExistingTokenId, setUpdateExistingTokenId] = useState<string | null>(null);
+  const [issuerDirectory, setIssuerDirectory] = useState<IssuerDirectoryEntry[] | null>(null);
+
+  const managedIssuerMatch =
+    typeof error === 'string' ? error.match(/managed by issuer\s+(0x[a-fA-F0-9]{40,})/i) : null;
+  const managedIssuerH160 = managedIssuerMatch?.[1] ? normalizeH160(managedIssuerMatch[1]) : '';
+  const managedIssuerEntry =
+    managedIssuerH160 && issuerDirectory
+      ? issuerDirectory.find((e) => Array.isArray((e as any).issuerH160s) && (e as any).issuerH160s.includes(managedIssuerH160))
+      : null;
+  const managedIssuerLabel = managedIssuerEntry?.organizationName || managedIssuerEntry?.domain || managedIssuerEntry?.did || '';
+
+  // Offer the "Update existing" action whenever we have the existing tokenId.
+  // Disable it when we know the passport is managed by a different issuer-of-record.
+  const canOfferUpdateExisting = !!existingTokenId;
+  const canUpdateExisting = !!existingTokenId && !String(error || '').includes('managed by issuer');
+
+  useEffect(() => {
+    if (!existingTokenId) return;
+    if (issuerDirectory) return;
+    void (async () => {
+      try {
+        const res = await fetch('/api/issuer/directory', { method: 'GET' });
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.success && Array.isArray(json.issuers)) {
+          setIssuerDirectory(json.issuers as IssuerDirectoryEntry[]);
+        } else {
+          setIssuerDirectory([]);
+        }
+      } catch {
+        setIssuerDirectory([]);
+      }
+    })();
+  }, [existingTokenId, issuerDirectory]);
 
   const content = (
     <div className='space-y-6'>
@@ -392,19 +589,19 @@ export function DppHybridCreate({
           {phase === 'preparing' && (
             <>
               <Loader2 className='w-4 h-4 animate-spin text-blue-600' />
-              <span className='text-sm'>Phase 1: Server preparing (no signing)...</span>
+              <span className='text-sm'>Step 1: Preparing the passport (no signing)...</span>
             </>
           )}
           {phase === 'signing' && (
             <>
               <Loader2 className='w-4 h-4 animate-spin text-blue-600' />
-              <span className='text-sm'>Phase 2: Browser signing VC-JWT...</span>
+              <span className='text-sm'>Step 2: Signing the product credential...</span>
             </>
           )}
           {phase === 'finalizing' && (
             <>
               <Loader2 className='w-4 h-4 animate-spin text-blue-600' />
-              <span className='text-sm'>Phase 3: Server finalizing (IPFS + on-chain)...</span>
+              <span className='text-sm'>Step 3: Publishing the record (advanced)...</span>
             </>
           )}
           {phase === 'complete' && (
@@ -426,7 +623,47 @@ export function DppHybridCreate({
           <Alert variant='destructive'>
             <XCircle className='h-4 w-4' />
             <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription className="space-y-3">
+              <div>{error}</div>
+              {managedIssuerH160 ? (
+                <div className="text-sm">
+                  Managed by:{' '}
+                  <span className="font-medium">{managedIssuerLabel || managedIssuerH160.substring(0, 10) + '...'}</span>
+                </div>
+              ) : null}
+              {existingTokenId ? (
+                <div className="flex flex-wrap gap-2">
+                  {canOfferUpdateExisting ? (
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      disabled={!canUpdateExisting}
+                      title={canUpdateExisting ? 'Update the existing passport' : 'Only the issuer-of-record can update'}
+                      onClick={() => setUpdateExistingTokenId(existingTokenId)}
+                    >
+                      Update existing passport
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => window.open(`/render/${encodeURIComponent(existingTokenId)}`, '_blank')}
+                  >
+                    View existing passport
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => (window.location.href = '/passports#list')}
+                  >
+                    Go to Passports list
+                  </Button>
+                </div>
+              ) : null}
+            </AlertDescription>
           </Alert>
         )}
 
@@ -436,13 +673,13 @@ export function DppHybridCreate({
             <CheckCircle className='h-4 w-4 text-green-600' />
             <AlertTitle>Created</AlertTitle>
             <AlertDescription className='space-y-1 mt-2'>
-	              <div><strong>Token ID:</strong> {result.tokenId}</div>
-	              <div><strong>IPFS CID:</strong> {result.ipfsCid}</div>
-	              <div><strong>Tx Hash:</strong> <code className='text-xs'>{result.txHash}</code></div>
-	              <div><strong>Block:</strong> {result.blockNumber}</div>
+	              <div><strong>Passport ID:</strong> {result.tokenId}</div>
+	              <div><strong>Record ID:</strong> {result.ipfsCid}</div>
+	              <div><strong>Transaction (advanced):</strong> <code className='text-xs'>{result.txHash}</code></div>
+	              <div><strong>Block (advanced):</strong> {result.blockNumber}</div>
 	              {result.verifyUrl && (
 	                <div>
-	                  <strong>Verify URL:</strong>{' '}
+	                  <strong>Verification link:</strong>{' '}
 	                  <a className='underline' href={result.verifyUrl} target='_blank' rel='noreferrer'>
 	                    {result.verifyUrl}
 	                  </a>
@@ -450,7 +687,19 @@ export function DppHybridCreate({
 	              )}
 	            </AlertDescription>
 	          </Alert>
-	        )}
+        )}
+
+        <PassportUpdateModal
+          open={updateExistingTokenId != null}
+          tokenId={updateExistingTokenId || undefined}
+          onOpenChange={(open) => setUpdateExistingTokenId(open ? updateExistingTokenId : null)}
+          onSuccess={() => {
+            setUpdateExistingTokenId(null);
+            toast.success('Passport updated');
+          }}
+          initialIssuerDid={lockIssuerDid ? formData.issuerDid : undefined}
+          lockIssuerDid={lockIssuerDid}
+        />
 
         {/* Input Mode Selector */}
         {phase !== 'complete' && (
@@ -515,7 +764,7 @@ export function DppHybridCreate({
                 </select>
                 {!connectedAccount && (
                   <p className='text-xs text-amber-600 dark:text-amber-400 mt-2'>
-                    Connect your wallet first to use templates
+                    Connect your account first to use templates
                   </p>
                 )}
               </div>
@@ -564,7 +813,7 @@ export function DppHybridCreate({
                 )}
 	                {!connectedAccount && (
 	                  <p className='text-xs text-amber-600 dark:text-amber-400 mt-2'>
-	                    Connect your wallet to upload products
+	                    Connect your account to upload products
 	                  </p>
 	                )}
               </div>
@@ -637,6 +886,127 @@ export function DppHybridCreate({
                   disabled={isLoading}
                 />
               </div>
+            </div>
+
+            {/* Product Images */}
+            <div className='space-y-3 bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-4'>
+              <div className='flex items-start justify-between gap-3'>
+                <div className='space-y-1'>
+                  <div className='text-sm font-semibold'>Product images (optional)</div>
+                  <div className='text-xs text-muted-foreground'>
+                    These are shown on the customer page. Images are uploaded to IPFS and referenced in the passport.
+                  </div>
+                </div>
+                <input
+                  ref={imageInputRef}
+                  type='file'
+                  accept='image/*'
+                  multiple
+                  className='hidden'
+                  onChange={async (e) => {
+                    const files = e.currentTarget.files;
+                    await uploadImagesToIpfs(files);
+                    e.currentTarget.value = '';
+                  }}
+                  disabled={isLoading || imageUploadBusy || !connectedAccount}
+                />
+              </div>
+
+              <div className='flex flex-wrap gap-2'>
+                <Button
+                  type='button'
+                  variant='outline'
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={isLoading || imageUploadBusy || !connectedAccount}>
+                  {imageUploadBusy ? (
+                    <>
+                      <Loader2 className='w-4 h-4 mr-2 animate-spin' />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className='w-4 h-4 mr-2' />
+                      Upload images
+                    </>
+                  )}
+                </Button>
+                {productImages.length > 0 && (
+                  <Button
+                    type='button'
+                    variant='outline'
+                    onClick={() => setProductImages([])}
+                    disabled={isLoading || imageUploadBusy}>
+                    Remove all
+                  </Button>
+                )}
+              </div>
+
+              {!connectedAccount && (
+                <div className='text-xs text-amber-600 dark:text-amber-400'>
+                  Connect your account to upload images.
+                </div>
+              )}
+
+              {productImages.length === 0 ? (
+                <div className='text-xs text-muted-foreground'>No images uploaded yet.</div>
+              ) : (
+                <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3'>
+                      {productImages.map((img, idx) => (
+                    <div key={`${img.cid}-${idx}`} className='space-y-2'>
+                      <div className='relative'>
+                        <img
+                          src={img.url || getIPFSGatewayURL(img.cid)}
+                          alt={img.alt || img.name || 'Product image'}
+                          className='w-full aspect-square object-cover rounded-md border border-gray-200 dark:border-gray-800'
+                        />
+                        {img.kind === 'primary' && (
+                          <div className='absolute top-2 left-2 text-[10px] font-semibold px-2 py-1 rounded-full bg-black/70 text-white'>
+                            Cover
+                          </div>
+                        )}
+                      </div>
+                      <div className='flex gap-2'>
+                        {img.kind !== 'primary' ? (
+                          <Button
+                            type='button'
+                            variant='outline'
+                            className='flex-1'
+                            onClick={() =>
+                              setProductImages((prev) =>
+                                prev.map((p, i) => ({
+                                  ...p,
+                                  kind: i === idx ? 'primary' : 'gallery',
+                                }))
+                              )
+                            }
+                            disabled={isLoading || imageUploadBusy}>
+                            Set as cover
+                          </Button>
+                        ) : (
+                          <Button type='button' variant='outline' className='flex-1' disabled>
+                            Cover image
+                          </Button>
+                        )}
+                        <Button
+                          type='button'
+                          variant='outline'
+                          onClick={() =>
+                            setProductImages((prev) => {
+                              const next = prev.filter((_, i) => i !== idx);
+                              if (!next.some((i) => i.kind === 'primary') && next.length > 0) {
+                                next[0] = { ...next[0], kind: 'primary' };
+                              }
+                              return next;
+                            })
+                          }
+                          disabled={isLoading || imageUploadBusy}>
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Granularity-specific Fields */}
@@ -924,13 +1294,13 @@ export function DppHybridCreate({
         {/* Prepared Data Preview */}
         {preparedData && phase !== 'complete' && (
           <div className='mt-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg'>
-            <h4 className='text-sm font-semibold mb-2'>Prepared Data (Preview)</h4>
+            <h4 className='text-sm font-semibold mb-2'>Preview</h4>
             <div className='text-xs space-y-1'>
               <div><strong>Product:</strong> {preparedData.untpPreview.productName}</div>
-              <div><strong>Granularity:</strong> {preparedData.untpPreview.granularityLevel}</div>
-              <div><strong>Dataset Type:</strong> {preparedData.chainPreview.datasetType}</div>
+              <div><strong>Level:</strong> {preparedData.untpPreview.granularityLevel}</div>
+              <div><strong>Record format (advanced):</strong> {preparedData.chainPreview.datasetType}</div>
               {preparedData.chainPreview.subjectIdHash && (
-                <div><strong>Subject ID Hash:</strong> <code className='text-xs'>{preparedData.chainPreview.subjectIdHash}</code></div>
+                <div><strong>Subject identifier hash (advanced):</strong> <code className='text-xs'>{preparedData.chainPreview.subjectIdHash}</code></div>
               )}
             </div>
           </div>
@@ -940,13 +1310,13 @@ export function DppHybridCreate({
         <Alert>
           <Info className='h-4 w-4' />
           <AlertDescription className='text-xs'>
-            <strong>Hybrid Flow:</strong> This component uses a two-phase creation process where private keys never leave the browser.
+            <strong>Privacy-preserving flow:</strong> Signing happens in the browser—private keys never leave your device.
             <br />
-            Phase 1: Server prepares VC payload (no signing)
+            Step 1: Server prepares the credential payload (no signing)
             <br />
-            Phase 2: Browser signs VC using Polkadot wallet
+            Step 2: Browser signs using your account
             <br />
-            Phase 3: Server uploads to IPFS and registers on-chain
+            Step 3: Server publishes the record and registers the public reference
           </AlertDescription>
         </Alert>
     </div>
@@ -964,10 +1334,10 @@ export function DppHybridCreate({
     <Card className='bg-gray-200/70 dark:bg-white/5 border-none shadow-none'>
       <CardHeader className='pb-4'>
         <CardTitle className='text-2xl font-medium'>
-          Create Passport (Hybrid v0.2 + VC)
+          Create a product passport
         </CardTitle>
         <p className='text-sm text-muted-foreground'>
-          Two-phase creation: server prepares → browser signs VC → server finalizes
+          Guided creation: prepare → sign → publish
         </p>
       </CardHeader>
       <CardContent className='space-y-6'>

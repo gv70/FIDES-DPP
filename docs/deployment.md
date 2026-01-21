@@ -95,7 +95,7 @@ IDR_BASE_URL=https://dpp.example.com
 RENDER_BASE_URL=https://dpp.example.com
 
 # UNTP
-UNTP_SCHEMA_URL=https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.1.json
+UNTP_SCHEMA_URL=https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.0.json
 EOF
 
 # 2. Start with stateful profile

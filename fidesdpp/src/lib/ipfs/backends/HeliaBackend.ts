@@ -24,7 +24,7 @@ import type {
   UploadMetadata,
   IpfsConfig 
 } from '../IpfsStorageBackend';
-import { computeJsonHashSync, computeJwtHash } from '../IpfsStorageBackend';
+import { computeBytesHash, computeJsonHashSync, computeJwtHash } from '../IpfsStorageBackend';
 
 // Dynamic imports to avoid bundling issues
 let heliaInstance: any = null;
@@ -159,6 +159,21 @@ export class HeliaBackend implements IpfsStorageBackend {
     const addResult = await this.unixfs!.addBytes(bytes);
     const cid = addResult.toString();
     
+    return {
+      cid,
+      hash,
+      gatewayUrl: this.getGatewayUrl(cid),
+      size: bytes.length,
+    };
+  }
+
+  async uploadBytes(bytes: Uint8Array, metadata?: UploadMetadata): Promise<UploadResult> {
+    await this.ensureInitialized();
+
+    const hash = computeBytesHash(bytes);
+    const addResult = await this.unixfs!.addBytes(bytes);
+    const cid = addResult.toString();
+
     return {
       cid,
       hash,

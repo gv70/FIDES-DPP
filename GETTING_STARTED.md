@@ -29,8 +29,11 @@ cd FIDES-DPP
 2. Start IPFS (Kubo):
 
 ```bash
+# macOS/Linux helper
 bash scripts/setup-ipfs.sh
 ```
+
+On Windows, install Kubo and run `ipfs init && ipfs daemon` (see `fidesdpp/IPFS_SETUP_FOSS.md`).
 
 3. Configure the app:
 
@@ -112,7 +115,17 @@ Check that services are running:
 
 ```bash
 # Check IPFS
-curl http://127.0.0.1:5001/api/v0/version
+curl -X POST http://127.0.0.1:5001/api/v0/version
+```
+
+Windows PowerShell notes:
+
+- `curl` is an alias for `Invoke-WebRequest` and does not support `-X`. Use `curl.exe` or `Invoke-RestMethod`:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:5001/api/v0/version
+# or:
+curl.exe -X POST http://127.0.0.1:5001/api/v0/version
 ```
 
 ## Next Steps
@@ -135,9 +148,18 @@ ipfs daemon
 
 Check if ports 3000, 5001, or 8080 are already in use:
 ```bash
+# macOS/Linux
 lsof -i :3000
 lsof -i :5001
 lsof -i :8080
+```
+
+Windows:
+
+```powershell
+netstat -ano | findstr :3000
+netstat -ano | findstr :5001
+netstat -ano | findstr :8080
 ```
 
 ### Dependencies version mismatch

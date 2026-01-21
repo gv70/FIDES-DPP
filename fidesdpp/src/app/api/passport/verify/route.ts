@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
           params: {},
         }],
         schemaMeta: {
-          url: process.env.UNTP_SCHEMA_URL || 'https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.1.json',
+          url: process.env.UNTP_SCHEMA_URL || 'https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.0.json',
           fetchedAt: new Date(),
           sha256: '',
           size: 0,
@@ -224,6 +224,10 @@ export async function POST(request: NextRequest) {
           message: vcSignatureValid 
             ? 'VC signature valid' 
             : `VC signature invalid: ${verificationReport.vcVerification?.errors?.join(', ') || 'unknown error'}`
+        },
+        schemaValid: {
+          passed: schemaValid,
+          message: schemaValid ? 'Schema validation passed' : 'Schema validation failed',
         },
       },
       onChainData: verificationReport.onChainData,

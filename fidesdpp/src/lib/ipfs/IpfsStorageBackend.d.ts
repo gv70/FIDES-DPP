@@ -15,6 +15,8 @@ export interface UploadMetadata {
     name?: string;
     /** Key-value pairs for indexing and search */
     keyvalues?: Record<string, string>;
+    /** Optional MIME type hint (used for binary uploads) */
+    contentType?: string;
 }
 export interface UploadResult {
     /** IPFS CID (Content Identifier) */
@@ -92,6 +94,15 @@ export interface IpfsStorageBackend {
      */
     uploadText(text: string, metadata?: UploadMetadata): Promise<UploadResult>;
     /**
+     * Upload binary data to IPFS (e.g. images).
+     *
+     * @param bytes - Raw bytes to upload
+     * @param metadata - Optional metadata (name, keyvalues, contentType)
+     * @returns CID, hash (SHA-256 of bytes), gateway URL, and size
+     * @throws Error if upload fails or backend is unavailable
+     */
+    uploadBytes(bytes: Uint8Array, metadata?: UploadMetadata): Promise<UploadResult>;
+    /**
      * Retrieve raw text data from IPFS by CID
      *
      * Used for Milestone 2+ where we retrieve raw JWT strings from IPFS.
@@ -148,4 +159,8 @@ export declare function computeJsonHashSync(data: object): string;
  * @returns Hex-encoded hash with 0x prefix
  */
 export declare function computeJwtHash(jwt: string): string;
+/**
+ * Compute SHA-256 hash of raw bytes
+ */
+export declare function computeBytesHash(bytes: Uint8Array): string;
 //# sourceMappingURL=IpfsStorageBackend.d.ts.map

@@ -5,11 +5,11 @@
  * @license Apache-2.0
  */
 
-import { createIpfsBackend, type IpfsConfig } from '../../../src/lib/ipfs/IpfsStorageFactory';
+import { createIpfsBackend } from '../../../src/lib/ipfs/IpfsStorageFactory';
 import type { IpfsStorageBackend } from '../../../src/lib/ipfs/IpfsStorageBackend';
 
 export function getIpfsBackend(options: any): IpfsStorageBackend {
-  const config: IpfsConfig = {
+  const config = {
     backend: options.backend || process.env.IPFS_BACKEND || 'kubo',
     nodeUrl: options.nodeUrl || process.env.IPFS_NODE_URL,
     gatewayUrl: options.gatewayUrl || process.env.IPFS_GATEWAY_URL,

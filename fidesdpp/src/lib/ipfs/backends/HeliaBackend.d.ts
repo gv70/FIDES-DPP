@@ -29,6 +29,7 @@ export declare class HeliaBackend implements IpfsStorageBackend {
     uploadJson(data: object, metadata?: UploadMetadata): Promise<UploadResult>;
     retrieveJson(cid: string): Promise<RetrieveResult>;
     uploadText(text: string, metadata?: UploadMetadata): Promise<UploadResult>;
+    uploadBytes(bytes: Uint8Array, metadata?: UploadMetadata): Promise<UploadResult>;
     retrieveText(cid: string): Promise<{
         data: string;
         hash: string;

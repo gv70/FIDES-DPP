@@ -21,6 +21,7 @@ module.exports = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^did-jwt-vc$': '<rootDir>/src/test/mocks/did-jwt-vc.ts',
+    '^jose$': '<rootDir>/src/test/mocks/jose.ts',
   },
   
   // Transform TypeScript files

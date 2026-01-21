@@ -16,6 +16,8 @@ export interface UploadMetadata {
   name?: string;
   /** Key-value pairs for indexing and search */
   keyvalues?: Record<string, string>;
+  /** Optional MIME type hint (used for binary uploads) */
+  contentType?: string;
 }
 
 export interface UploadResult {
@@ -99,6 +101,16 @@ export interface IpfsStorageBackend {
    * @throws Error if upload fails or backend is unavailable
    */
   uploadText(text: string, metadata?: UploadMetadata): Promise<UploadResult>;
+
+  /**
+   * Upload binary data to IPFS (e.g. images).
+   *
+   * @param bytes - Raw bytes to upload
+   * @param metadata - Optional metadata (name, keyvalues, contentType)
+   * @returns CID, hash (SHA-256 of bytes), gateway URL, and size
+   * @throws Error if upload fails or backend is unavailable
+   */
+  uploadBytes(bytes: Uint8Array, metadata?: UploadMetadata): Promise<UploadResult>;
 
   /**
    * Retrieve raw text data from IPFS by CID
@@ -191,6 +203,15 @@ export function computeJsonHashSync(data: object): string {
 export function computeJwtHash(jwt: string): string {
   const crypto = require('crypto');
   const hash = crypto.createHash('sha256').update(jwt, 'utf-8').digest('hex');
+  return `0x${hash}`;
+}
+
+/**
+ * Compute SHA-256 hash of raw bytes
+ */
+export function computeBytesHash(bytes: Uint8Array): string {
+  const crypto = require('crypto');
+  const hash = crypto.createHash('sha256').update(Buffer.from(bytes)).digest('hex');
   return `0x${hash}`;
 }
 

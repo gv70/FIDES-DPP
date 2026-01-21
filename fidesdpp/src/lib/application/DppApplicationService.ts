@@ -11,6 +11,8 @@ import type { VcEngine, PolkadotAccount } from '../vc/VcEngine';
 import type { IpfsStorageBackend } from '../ipfs/IpfsStorageBackend';
 import type { ChainAdapter, Granularity } from '../chain/ChainAdapter';
 import type { DigitalProductPassport } from '../untp/generateDppJsonLd';
+import { buildCanonicalSubjectId, lookupTokenIdByCanonicalSubjectId } from '../passports/lookup';
+import { decodeAddress, keccakAsU8a } from '@polkadot/util-crypto';
 import { computeJwtHash } from '../ipfs/IpfsStorageBackend';
 import { createKeyDid } from '../vc/did-resolver';
 import type { AnagraficaService } from '../anagrafica/AnagraficaService';
@@ -638,6 +640,21 @@ export class DppApplicationService {
   }
 
   /**
+   * Transfer custody (ownership) of a passport token.
+   * 
+   * This does not change issuer authority. Only the current owner can transfer.
+   */
+  async transferPassport(
+    tokenId: string,
+    to: string,
+    ownerAccount: PolkadotAccount
+  ): Promise<TransactionResult> {
+    const txResult = await this.chain.transferPassport(tokenId, to, ownerAccount);
+    await this.chain.waitForTransaction(txResult.txHash);
+    return txResult;
+  }
+
+  /**
    * Map form input to UNTP DPP structure
    * 
    * Includes granularityLevel aligned with UNTP and ESPR Article 10(1)(f).
@@ -863,6 +880,71 @@ export class DppApplicationService {
     // 1. Determine granularity
     const granularity: Granularity = input.granularity || 'Batch';
 
+    // Guardrail: prevent duplicate passports for the same subject (best-effort).
+    // We do not change the contract here; we just refuse to proceed if an existing tokenId is found.
+    // Disabled during unit tests to avoid any RPC dependencies.
+    if (process.env.NODE_ENV !== 'test' && process.env.ENFORCE_UNIQUE_SUBJECT !== 'false') {
+      const canonicalSubjectId = buildCanonicalSubjectId({
+        productId: input.productId,
+        granularity,
+        batchNumber: input.batchNumber,
+        serialNumber: input.serialNumber,
+      });
+
+      if (canonicalSubjectId) {
+        const existingTokenId = await lookupTokenIdByCanonicalSubjectId({ canonicalSubjectId });
+        if (existingTokenId) {
+          let issuerHint: string | undefined;
+          try {
+            const existing = await this.chain.readPassport(existingTokenId);
+
+            const normalizeH160 = (value: string): string => {
+              const v = String(value || '').trim();
+              if (!v) return '';
+              if (v.startsWith('0x')) return v.toLowerCase();
+              return `0x${v}`.toLowerCase();
+            };
+
+            const accountToH160 = (address: string): string => {
+              const bytes = decodeAddress(address);
+              if (bytes.length === 20) return normalizeH160(`0x${Buffer.from(bytes).toString('hex')}`);
+              if (bytes.length === 32) {
+                const hash = keccakAsU8a(bytes, 256);
+                const h160 = hash.slice(12);
+                return normalizeH160(`0x${Buffer.from(h160).toString('hex')}`);
+              }
+              return '';
+            };
+
+            const callerH160 = accountToH160(input.issuerAddress);
+            const issuerH160 = normalizeH160(existing.issuer);
+            const isSameIssuer = callerH160 && issuerH160 && callerH160 === issuerH160;
+
+            issuerHint = existing.issuer;
+
+            if (!isSameIssuer) {
+              throw new Error(
+                `A passport already exists for this identifier (Passport ID: ${existingTokenId}). ` +
+                  `It is managed by issuer ${issuerHint}. ` +
+                  `Your wallet is not the issuer-of-record, so you should not create a second passport. ` +
+                  `Ask the issuer to publish a new version using Update Passport.`
+              );
+            }
+          } catch (e: any) {
+            // If we cannot read existing issuer, fall back to the generic message.
+            if (e?.message && String(e.message).includes('managed by issuer')) {
+              throw e;
+            }
+          }
+
+          throw new Error(
+            `A passport already exists for this identifier (Passport ID: ${existingTokenId}). ` +
+              `Use Update Passport to publish a new version instead of creating a second passport.`
+          );
+        }
+      }
+    }
+
     // 2. Map form input to UNTP DPP model
     const untpDpp = this.mapFormInputToDpp(input, granularity) as any;
 
@@ -1010,6 +1092,67 @@ export class DppApplicationService {
           success: false,
           error: 'Issuer address mismatch',
         };
+      }
+
+      // Guardrail: prevent duplicates between Phase 1 and Phase 2 (race condition).
+      if (process.env.NODE_ENV !== 'test' && process.env.ENFORCE_UNIQUE_SUBJECT !== 'false') {
+        const canonicalSubjectId = buildCanonicalSubjectId({
+          productId: prepared.input.productId,
+          granularity: prepared.input.granularity,
+          batchNumber: prepared.input.batchNumber,
+          serialNumber: prepared.input.serialNumber,
+        });
+
+        if (canonicalSubjectId) {
+          const existingTokenId = await lookupTokenIdByCanonicalSubjectId({ canonicalSubjectId });
+          if (existingTokenId) {
+            try {
+              const existing = await this.chain.readPassport(existingTokenId);
+
+              const normalizeH160 = (value: string): string => {
+                const v = String(value || '').trim();
+                if (!v) return '';
+                if (v.startsWith('0x')) return v.toLowerCase();
+                return `0x${v}`.toLowerCase();
+              };
+
+              const accountToH160 = (address: string): string => {
+                const bytes = decodeAddress(address);
+                if (bytes.length === 20) return normalizeH160(`0x${Buffer.from(bytes).toString('hex')}`);
+                if (bytes.length === 32) {
+                  const hash = keccakAsU8a(bytes, 256);
+                  const h160 = hash.slice(12);
+                  return normalizeH160(`0x${Buffer.from(h160).toString('hex')}`);
+                }
+                return '';
+              };
+
+              const callerH160 = accountToH160(input.issuerAddress);
+              const issuerH160 = normalizeH160(existing.issuer);
+              const isSameIssuer = callerH160 && issuerH160 && callerH160 === issuerH160;
+
+              if (!isSameIssuer) {
+                return {
+                  success: false,
+                  error:
+                    `A passport already exists for this identifier (Passport ID: ${existingTokenId}). ` +
+                    `It is managed by issuer ${existing.issuer}. ` +
+                    `Your wallet is not the issuer-of-record, so you should not create a second passport. ` +
+                    `Ask the issuer to publish a new version using Update Passport.`,
+                };
+              }
+            } catch {
+              // ignore and fall through to generic message
+            }
+
+            return {
+              success: false,
+              error:
+                `A passport already exists for this identifier (Passport ID: ${existingTokenId}). ` +
+                `Use Update Passport to publish a new version instead of creating a second passport.`,
+            };
+          }
+        }
       }
 
       // 3. Determine if we need to sign VC-JWT server-side (did:web) or use browser-signed (did:key)
@@ -1541,6 +1684,9 @@ export class DppApplicationService {
         operatorId: manufacturerOperatorId,
       },
       issuerDid,
+      ...(Array.isArray(input.annexIII?.productImages) && input.annexIII!.productImages!.length > 0
+        ? { productImages: input.annexIII!.productImages }
+        : {}),
     };
 
     const restrictedData = {

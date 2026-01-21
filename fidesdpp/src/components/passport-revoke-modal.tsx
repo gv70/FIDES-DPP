@@ -17,6 +17,7 @@ import { ContractId, deployments } from '@/contracts/deployments';
 import type { DppContractContractApi } from '@/contracts/types/dpp-contract';
 import { appendTxLog } from '@/lib/tx/tx-log';
 import { usePilotContext } from '@/hooks/use-pilot-context';
+import { PassportTokenLookup } from '@/components/shared/passport-token-lookup';
 
 interface PassportRevokeModalProps {
   open: boolean;
@@ -164,16 +165,29 @@ export function PassportRevokeModal({ open, onOpenChange, tokenId: initialTokenI
             </Alert>
           )}
 
-          <div className="space-y-2">
-            <Label htmlFor="revoke-token-id">Token ID *</Label>
-            <Input
-              id="revoke-token-id"
-              placeholder="Enter token ID to revoke"
-              value={tokenId}
-              onChange={(e) => setTokenId(e.target.value)}
-              disabled={isLoading}
-            />
-          </div>
+          <PassportTokenLookup
+            defaultOpen
+            disabled={isLoading}
+            onResolvedTokenId={(foundTokenId) => {
+              setError('');
+              setConfirmed(false);
+              setTokenId(foundTokenId);
+            }}
+          />
+
+          <details className="bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
+            <summary className="cursor-pointer text-sm font-semibold">Or enter passport ID (technical)</summary>
+            <div className="mt-3 space-y-2">
+              <Label htmlFor="revoke-token-id" className="text-xs text-muted-foreground">Passport ID *</Label>
+              <Input
+                id="revoke-token-id"
+                placeholder="Enter passport ID"
+                value={tokenId}
+                onChange={(e) => setTokenId(e.target.value)}
+                disabled={isLoading}
+              />
+            </div>
+          </details>
 
           <div className="space-y-2">
             <Label htmlFor="revoke-reason">Reason (Optional)</Label>

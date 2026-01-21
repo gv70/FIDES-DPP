@@ -2,14 +2,14 @@
   "name": "@fides-dpp/cli",
   "version": "0.1.0",
   "description": "Command-line interface for FIDES Digital Product Passport",
-  "main": "dist/index.js",
+  "main": "dist/cli/src/index.js",
   "bin": {
-    "dpp-cli": "./dist/index.js"
+    "dpp-cli": "./dist/cli/src/index.js"
   },
   "scripts": {
     "build": "tsc",
     "dev": "NODE_PATH=../node_modules:$NODE_PATH tsx src/index.ts",
-    "start": "node dist/index.js",
+    "start": "node dist/cli/src/index.js",
     "cli": "NODE_PATH=../node_modules:$NODE_PATH tsx src/index.ts"
   },
   "keywords": [

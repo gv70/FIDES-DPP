@@ -5,43 +5,43 @@ export default function Home() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-semibold">Fides DPP Platform</h1>
+        <h1 className="text-3xl font-semibold">Product Passports</h1>
         <p className="text-muted-foreground mt-2">
-          Create, manage, and verify Digital Product Passports anchored on-chain and linked to off-chain datasets.
+          Create and share product passports your customers can verify in seconds—without needing technical knowledge.
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardHeader>
-            <CardTitle>Master Data</CardTitle>
+            <CardTitle>Setup</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="text-sm text-muted-foreground">Wallet, issuer identity, and configuration.</div>
+            <div className="text-sm text-muted-foreground">Connect your account and set up your issuing organization.</div>
             <Link className="inline-block text-sm font-medium underline underline-offset-4" href="/master-data">
-              Open Master Data
+              Open Setup
             </Link>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Passport Management</CardTitle>
+            <CardTitle>Product Passports</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="text-sm text-muted-foreground">Create, update, revoke, and transfer passports.</div>
+            <div className="text-sm text-muted-foreground">Create, update, invalidate, and transfer product passports.</div>
             <Link className="inline-block text-sm font-medium underline underline-offset-4" href="/passports">
-              Open Passport Management
+              Open Passports
             </Link>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Verification</CardTitle>
+            <CardTitle>Customer Verification</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="text-sm text-muted-foreground">Verify integrity by token ID and open the rendered view.</div>
+            <div className="text-sm text-muted-foreground">Verify authenticity by passport ID and open the customer view.</div>
             <Link className="inline-block text-sm font-medium underline underline-offset-4" href="/verification">
               Open Verification
             </Link>
@@ -50,24 +50,24 @@ export default function Home() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Traceability (DTE)</CardTitle>
+            <CardTitle>Product History Events</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="text-sm text-muted-foreground">Create UNTP Digital Traceability Events (VC-JWT) and link them resolver-first.</div>
+            <div className="text-sm text-muted-foreground">Record manufacturing, inspection, packaging, and shipping events linked to a passport.</div>
             <Link className="inline-block text-sm font-medium underline underline-offset-4" href="/traceability">
-              Open Traceability Events
+              Open History Events
             </Link>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Administration</CardTitle>
+            <CardTitle>Advanced (Infrastructure)</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="text-sm text-muted-foreground">Deploy a contract and run contract-level utilities.</div>
+            <div className="text-sm text-muted-foreground">Deployment and low-level utilities (for technical teams).</div>
             <Link className="inline-block text-sm font-medium underline underline-offset-4" href="/administration#deploy">
-              Open Contract Deployment
+              Open Advanced Tools
             </Link>
           </CardContent>
         </Card>

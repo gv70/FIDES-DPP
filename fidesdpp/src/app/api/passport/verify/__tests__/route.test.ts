@@ -103,7 +103,7 @@ describe('POST /api/passport/verify', () => {
       schemaValidation: {
         valid: true,
         schemaMeta: {
-          url: 'https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.1.json',
+          url: 'https://test.uncefact.org/vocabulary/untp/dpp/untp-dpp-schema-0.6.0.json',
           sha256: 'abc123...',
           size: 50000,
           fetchedAt: new Date(),

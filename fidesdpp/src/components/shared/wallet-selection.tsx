@@ -80,7 +80,7 @@ interface WalletSelectionProps {
   buttonClassName?: string;
 }
 
-export function WalletSelection({ buttonLabel = 'Connect Wallet', buttonClassName = '' }: WalletSelectionProps) {
+export function WalletSelection({ buttonLabel = 'Connect account', buttonClassName = '' }: WalletSelectionProps) {
   const [isOpen, setIsOpen] = useState(false);
   const { wallets } = useTypink();
 
@@ -94,8 +94,8 @@ export function WalletSelection({ buttonLabel = 'Connect Wallet', buttonClassNam
 
       <DialogContent className='sm:max-w-2xl'>
         <DialogHeader>
-          <DialogTitle>Connect Wallet</DialogTitle>
-          <DialogDescription>Select a wallet to connect</DialogDescription>
+          <DialogTitle>Connect account</DialogTitle>
+          <DialogDescription>Select an account provider to connect</DialogDescription>
         </DialogHeader>
         <div className='flex flex-col gap-3'>
           {wallets.map((one) => (

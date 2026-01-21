@@ -99,9 +99,60 @@ export class IdrService {
       };
     }
 
+    // UNTP DTE discovery: link to traceability event credentials for this product identifier.
+    // This works even without anagrafica, as long as the DTE index is enabled.
+    if (this.dteIndexStorage) {
+      try {
+        const { deriveLookupAliases } = await import('../dte/dte-indexing');
+        const candidates: string[] = deriveLookupAliases(productId);
+        const all = (
+          await Promise.all(
+            candidates.map((id: string) => this.dteIndexStorage.listByProductId(id, { limit: 50 }))
+          )
+        ).flat();
+
+        const byCid = new Map<
+          string,
+          { cid: string; gatewayUrl?: string; issuerDid?: string; eventType?: string; eventTime?: string }
+        >();
+        for (const r of all) {
+          if (!r?.dteCid) continue;
+          const existing = byCid.get(r.dteCid);
+          const eventTime = r.eventTime ? String(r.eventTime) : undefined;
+          if (!existing) {
+            byCid.set(r.dteCid, {
+              cid: r.dteCid,
+              gatewayUrl: r.gatewayUrl,
+              issuerDid: r.issuerDid,
+              eventType: r.eventType,
+              eventTime,
+            });
+          } else {
+            if (eventTime && (!existing.eventTime || Date.parse(eventTime) > Date.parse(existing.eventTime))) {
+              existing.eventTime = eventTime;
+              existing.eventType = r.eventType || existing.eventType;
+            }
+          }
+        }
+
+        const renderBaseUrl = process.env.RENDER_BASE_URL || this.baseUrl;
+        const dteLinks = Array.from(byCid.values()).map((d) => ({
+          href: `${renderBaseUrl}/api/untp/dte/vc?cid=${encodeURIComponent(d.cid)}`,
+          type: 'application/vc+jwt',
+          title: `Digital Traceability Event${d.eventType ? ` (${d.eventType})` : ''}${d.eventTime ? ` @ ${d.eventTime}` : ''}`,
+        }));
+
+        if (dteLinks.length > 0) {
+          links['untp:dte'] = dteLinks;
+        }
+      } catch (error: any) {
+        console.warn('Failed to resolve DTE links for product linkset:', error.message);
+      }
+    }
+
     // Link: self (this linkset)
     links['self'] = {
-      href: `${this.baseUrl}/idr/products/${productId}?linkType=linkset`,
+      href: `${this.baseUrl}/idr/products/${encodeURIComponent(productId)}?linkType=linkset`,
       type: 'application/linkset+json',
       title: 'Identity Resolver Linkset',
     };
@@ -225,11 +276,11 @@ export class IdrService {
       anchor,
     };
 
-    // Link: self (entity profile)
+    // Link: self (this linkset)
     links['self'] = {
-      href: `${this.baseUrl}/idr/entities/${encodeURIComponent(entityId)}`,
-      type: 'application/json',
-      title: 'Entity Profile',
+      href: `${this.baseUrl}/idr/entities/${encodeURIComponent(entityId)}?linkType=linkset`,
+      type: 'application/linkset+json',
+      title: 'Identity Resolver Linkset',
     };
 
     // If anagrafica is available, add links to DPPs
@@ -280,11 +331,11 @@ export class IdrService {
       anchor,
     };
 
-    // Link: self (product profile)
+    // Link: self (this linkset)
     links['self'] = {
-      href: `${this.baseUrl}/idr/products/${encodeURIComponent(productId)}`,
-      type: 'application/json',
-      title: 'Product Profile',
+      href: `${this.baseUrl}/idr/products/${encodeURIComponent(productId)}?linkType=linkset`,
+      type: 'application/linkset+json',
+      title: 'Identity Resolver Linkset',
     };
 
     // If anagrafica is available, add links to DPPs

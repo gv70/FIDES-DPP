@@ -59,6 +59,7 @@ export class DidWebManager {
   private pool?: Pool;
   private devStorage: Map<string, StoredIssuerIdentity> = new Map();
   private jsonStoragePath: string;
+  private jsonLastLoadedMtimeMs: number | null = null;
   private masterKey: Buffer | null = null;
 
   private isTestMode(): boolean {
@@ -454,8 +455,43 @@ export class DidWebManager {
     if (this.pool) {
       return this.getFromPostgres(did);
     } else {
+      await this.loadFromJson({ clear: true, quiet: true, ifChanged: true });
       return this.devStorage.get(did) || null;
     }
+  }
+
+  /**
+   * Update persisted metadata for an existing issuer identity.
+   *
+   * This is used to store issuer-specific configuration such as trusted supplier allowlists.
+   *
+   * @param did - did:web DID
+   * @param patch - Partial metadata to merge (shallow)
+   * @returns Updated issuer identity
+   */
+  async updateIssuerMetadata(did: string, patch: Record<string, unknown>): Promise<StoredIssuerIdentity> {
+    const existing = await this.getIssuerIdentity(did);
+    if (!existing) {
+      throw new Error(`Issuer not found: ${did}`);
+    }
+
+    const updated: StoredIssuerIdentity = {
+      ...existing,
+      metadata: {
+        ...(existing.metadata || {}),
+        ...(patch || {}),
+      },
+    };
+
+    if (this.pool) {
+      const query = `UPDATE issuer_identities SET metadata = $2 WHERE did = $1`;
+      await this.pool.query(query, [did, JSON.stringify(updated.metadata || {})]);
+    } else {
+      this.devStorage.set(did, updated);
+      await this.saveToJson();
+    }
+
+    return updated;
   }
 
   /**
@@ -467,6 +503,7 @@ export class DidWebManager {
     if (this.pool) {
       return this.listFromPostgres();
     } else {
+      await this.loadFromJson({ clear: true, quiet: true, ifChanged: true });
       return Array.from(this.devStorage.values());
     }
   }
@@ -886,12 +923,28 @@ export class DidWebManager {
    * 
    * Migrates old format (privateKey in plaintext) to new format (encrypted) on first load.
    */
-  private async loadFromJson(): Promise<void> {
+  private async loadFromJson(options?: { clear?: boolean; quiet?: boolean; ifChanged?: boolean }): Promise<void> {
     if (!this.jsonStoragePath || !fs.existsSync(this.jsonStoragePath)) {
       return; // File doesn't exist yet, start with empty storage
     }
 
     try {
+      if (options?.ifChanged) {
+        try {
+          const stat = fs.statSync(this.jsonStoragePath);
+          const mtimeMs = typeof stat.mtimeMs === 'number' ? stat.mtimeMs : new Date(stat.mtime).getTime();
+          if (this.jsonLastLoadedMtimeMs != null && mtimeMs === this.jsonLastLoadedMtimeMs) {
+            return;
+          }
+        } catch {
+          // fall through and attempt load
+        }
+      }
+
+      if (options?.clear) {
+        this.devStorage.clear();
+      }
+
       const data = fs.readFileSync(this.jsonStoragePath, 'utf-8');
       const issuers: any[] = JSON.parse(data);
       let needsMigration = false;
@@ -959,7 +1012,17 @@ export class DidWebManager {
         }
       }
 
-      console.log(`[DidWebManager] Loaded ${issuers.length} issuer(s) from JSON file`);
+      try {
+        const stat = fs.statSync(this.jsonStoragePath);
+        this.jsonLastLoadedMtimeMs =
+          typeof stat.mtimeMs === 'number' ? stat.mtimeMs : new Date(stat.mtime).getTime();
+      } catch {
+        // ignore
+      }
+
+      if (!options?.quiet) {
+        console.log(`[DidWebManager] Loaded ${issuers.length} issuer(s) from JSON file`);
+      }
     } catch (error: any) {
       console.error('[DidWebManager] Failed to load issuers from JSON file:', error.message);
       // Continue with empty storage on error

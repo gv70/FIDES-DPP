@@ -133,6 +133,10 @@ export class JwtVcEngine implements VcEngine {
     const credentialId = options?.credentialId || `urn:uuid:${this.generateUuid()}`;
     const dppContextUrl =
       process.env.UNTP_DPP_CONTEXT_URL || 'https://test.uncefact.org/vocabulary/untp/dpp/0.6.0/';
+    const idrBaseUrl = (process.env.IDR_BASE_URL || process.env.RENDER_BASE_URL || 'http://localhost:3000').replace(
+      /\/$/,
+      ''
+    );
 
     // 3. Build VC payload (UNTP-compliant with schema reference)
     const vcPayload: any = {
@@ -163,6 +167,18 @@ export class JwtVcEngine implements VcEngine {
         schemaSha256: process.env.UNTP_SCHEMA_SHA256,
       }),
     };
+
+    // UNTP render method: stable Identity Resolver URL (works before tokenId exists)
+    const productIdentifier = String((dppCore as any)?.product?.identifier || '').trim();
+    if (productIdentifier) {
+      vcPayload.renderMethod = [
+        {
+          id: `${idrBaseUrl}/idr/products/${encodeURIComponent(productIdentifier)}`,
+          type: 'text/html',
+          name: 'Human-readable Digital Product Passport',
+        },
+      ];
+    }
 
     if (this.statusListManager) {
       try {
@@ -258,6 +274,10 @@ export class JwtVcEngine implements VcEngine {
       issuerIdentity.metadata?.organizationName ||
       issuerIdentity.metadata?.domain ||
       issuerIdentity.did;
+    const idrBaseUrl = (process.env.IDR_BASE_URL || process.env.RENDER_BASE_URL || 'http://localhost:3000').replace(
+      /\/$/,
+      ''
+    );
 
     // Build VC payload (UNTP-compliant with schema reference)
     const vcPayload: any = {
@@ -289,6 +309,18 @@ export class JwtVcEngine implements VcEngine {
       }),
     };
 
+    // UNTP render method: stable Identity Resolver URL (works before tokenId exists)
+    const productIdentifier = String((dppCore as any)?.product?.identifier || '').trim();
+    if (productIdentifier) {
+      vcPayload.renderMethod = [
+        {
+          id: `${idrBaseUrl}/idr/products/${encodeURIComponent(productIdentifier)}`,
+          type: 'text/html',
+          name: 'Human-readable Digital Product Passport',
+        },
+      ];
+    }
+
     // Phase 2+: Add credentialStatus (UNTP MUST requirement)
     if (this.statusListManager) {
       try {
@@ -309,17 +341,7 @@ export class JwtVcEngine implements VcEngine {
       }
     }
 
-    // Phase 3: Add renderMethod (UNTP SHOULD requirement)
-    if (options?.tokenId) {
-      const renderBaseUrl = process.env.RENDER_BASE_URL || 'http://localhost:3000';
-      vcPayload.renderMethod = [
-        {
-          id: `${renderBaseUrl}/render/${options.tokenId}`,
-          type: 'text/html',
-          name: 'Human-readable Digital Product Passport',
-        },
-      ];
-    }
+    // Note: renderMethod is set above to the stable IDR URL (preferred for UNTP interoperability).
 
     // Create JWT signer from issuer identity
     // For did:web: uses server-managed private key

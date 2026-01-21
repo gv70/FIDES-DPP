@@ -12,6 +12,21 @@ import { useSearchParams } from 'next/navigation';
 import { CONTRACT_ADDRESS, WESTEND_ASSET_HUB } from '@/lib/config';
 import Link from 'next/link';
 
+type IssuerDirectoryEntry = {
+  did: string;
+  domain?: string;
+  organizationName?: string;
+  status?: string;
+  issuerH160s: string[];
+};
+
+function normalizeH160(value: string): string {
+  const v = String(value || '').trim().toLowerCase();
+  if (!v) return '';
+  if (!v.startsWith('0x')) return v;
+  return `0x${v.slice(2).padStart(40, '0')}`;
+}
+
 interface VerificationResult {
   valid: boolean;
   checks: {
@@ -73,6 +88,20 @@ export function DppVerify() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<string>('');
+  const [issuerDirectory, setIssuerDirectory] = useState<IssuerDirectoryEntry[] | null>(null);
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [lookupError, setLookupError] = useState<string>('');
+  const [productLookup, setProductLookup] = useState<{
+    productId: string;
+    granularity: 'ProductClass' | 'Batch' | 'Item';
+    batchNumber: string;
+    serialNumber: string;
+  }>({
+    productId: '',
+    granularity: 'ProductClass',
+    batchNumber: '',
+    serialNumber: '',
+  });
   const [history, setHistory] = useState<
     Array<{
       derivedVersion: number;
@@ -83,6 +112,8 @@ export function DppVerify() {
     }>
   >([]);
   const [historyError, setHistoryError] = useState<string>('');
+  const tokenIdFromQuery = (searchParams.get('tokenId') || '').trim();
+  const isCustomerMode = tokenIdFromQuery.length > 0;
   const verificationKey = searchParams.get('key') || '';
   const renderHref = tokenId
     ? `/render/${encodeURIComponent(tokenId)}${verificationKey ? `?key=${encodeURIComponent(verificationKey)}` : ''}`
@@ -105,12 +136,12 @@ export function DppVerify() {
             passed: vcVersion === onChainVersion,
             message:
               vcVersion === onChainVersion
-                ? `VC version matches on-chain version (${onChainVersion})`
-                : `VC version (${vcVersion}) does not match on-chain version (${onChainVersion})`,
+                ? `Credential version matches the public reference (${onChainVersion})`
+                : `Credential version (${vcVersion}) does not match the public reference (${onChainVersion})`,
           }
         : {
             passed: true,
-            message: `On-chain version is ${onChainVersion}. VC does not include version metadata.`,
+            message: `Public reference version is ${onChainVersion}. Credential does not include version metadata.`,
           }
       : {
           passed: true,
@@ -123,18 +154,18 @@ export function DppVerify() {
           passed: String(vcTokenId) === String(tokenId),
           message:
             String(vcTokenId) === String(tokenId)
-              ? 'VC tokenId matches the requested token'
-              : `VC tokenId (${vcTokenId}) does not match requested token (${tokenId})`,
+              ? 'Credential metadata matches the requested passport'
+              : `Credential metadata (${vcTokenId}) does not match the requested passport (${tokenId})`,
         }
       : {
           passed: true,
-          message: 'VC does not include tokenId metadata',
+          message: 'Credential does not include passport metadata',
         };
 
   const verifyToken = async (tokenIdToVerify: string) => {
     const normalizedTokenId = String(tokenIdToVerify || '').trim();
     if (!normalizedTokenId) {
-      setError('Please enter a token ID');
+      setError('Please enter a passport ID');
       return;
     }
 
@@ -194,8 +225,81 @@ export function DppVerify() {
     }
   };
 
+  const findByProductId = async () => {
+    setLookupBusy(true);
+    setLookupError('');
+
+    try {
+      const body: any = {
+        productId: productLookup.productId.trim(),
+        granularity: productLookup.granularity,
+      };
+      if (productLookup.granularity === 'Batch') body.batchNumber = productLookup.batchNumber.trim();
+      if (productLookup.granularity === 'Item') body.serialNumber = productLookup.serialNumber.trim();
+
+      const res = await fetch('/api/passports/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || 'Lookup failed');
+      }
+      if (!json?.found || !json?.tokenId) {
+        setLookupError('No passport found for this product identifier.');
+        return;
+      }
+
+      const foundTokenId = String(json.tokenId);
+      setTokenId(foundTokenId);
+      await verifyToken(foundTokenId);
+    } catch (e: any) {
+      setLookupError(e?.message || 'Lookup failed');
+    } finally {
+      setLookupBusy(false);
+    }
+  };
+
+  const dpp = result?.dppData || null;
+  const dppProduct = (dpp as any)?.product || null;
+  const dppManufacturer = (dpp as any)?.manufacturer || null;
+
+  const productName = String(dppProduct?.name || '').trim();
+  const manufacturerName = String(dppManufacturer?.name || '').trim();
+  const issuerH160 = normalizeH160(String(result?.onChainData?.issuer || ''));
+  const directoryIssuer =
+    issuerH160 && issuerDirectory ? issuerDirectory.find((e) => e.issuerH160s.includes(issuerH160)) : undefined;
+  const issuerDisplayName =
+    String(directoryIssuer?.organizationName || directoryIssuer?.domain || manufacturerName || '').trim() || '—';
+  const productIdentifier = String((dppProduct as any)?.registeredId || dppProduct?.identifier || '').trim();
+  const batchNumber = String(dppProduct?.batchNumber || '').trim();
+  const serialNumber = String(dppProduct?.serialNumber || '').trim();
+
+  const dppImagesRaw = (dpp as any)?.annexIII?.public?.productImages;
+  const dppImages = Array.isArray(dppImagesRaw) ? dppImagesRaw : [];
+  const normalizedImages = dppImages
+    .map((img: any, idx: number) => {
+      const cid = String(
+        img?.cid || (typeof img?.uri === 'string' ? String(img.uri).replace(/^ipfs:\/\//, '') : '')
+      ).trim();
+      const url = String(img?.url || (cid ? getIPFSGatewayURL(cid) : '')).trim();
+      if (!cid || !url) return null;
+      return {
+        cid,
+        url,
+        alt: String(img?.alt || img?.name || productName || 'Product image'),
+        kind: img?.kind === 'primary' || idx === 0 ? ('primary' as const) : ('gallery' as const),
+      };
+    })
+    .filter(Boolean) as Array<{ cid: string; url: string; alt: string; kind: 'primary' | 'gallery' }>;
+  const coverImage = normalizedImages.find((i) => i.kind === 'primary') || normalizedImages[0] || null;
+
+  const materialsCount = Array.isArray((dpp as any)?.materialsProvenance) ? (dpp as any).materialsProvenance.length : 0;
+  const claimsCount = Array.isArray((dpp as any)?.conformityClaim) ? (dpp as any).conformityClaim.length : 0;
+  const eventsCount = Array.isArray((dpp as any)?.traceabilityInformation) ? (dpp as any).traceabilityInformation.length : 0;
+
   useEffect(() => {
-    const tokenIdFromQuery = searchParams.get('tokenId');
     if (!tokenIdFromQuery) return;
 
     if (tokenIdFromQuery !== tokenId) {
@@ -205,7 +309,28 @@ export function DppVerify() {
     // Always auto-verify when tokenId is present in the URL (e.g., user clicks from list).
     void verifyToken(tokenIdFromQuery);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [tokenIdFromQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/issuer/directory');
+        const json = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (res.ok && json?.success && Array.isArray(json.issuers)) {
+          setIssuerDirectory(json.issuers as IssuerDirectoryEntry[]);
+        } else {
+          setIssuerDirectory(null);
+        }
+      } catch {
+        if (!cancelled) setIssuerDirectory(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const CheckItem = ({ 
     icon, 
@@ -243,123 +368,342 @@ export function DppVerify() {
           </Alert>
         )}
 
-        {/* Input Section */}
+        {/* Input / Context */}
         <div className='space-y-4 bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-6'>
-          <div className='space-y-2'>
-            <Label>Token ID</Label>
-            <div className='flex flex-col sm:flex-row gap-2'>
-              <Input
-                type='number'
-                placeholder='Enter token ID to verify'
-                value={tokenId}
-                onChange={(e) => setTokenId(e.target.value)}
-                disabled={isVerifying}
-              />
-              <Button
-                onClick={() => void verifyToken(tokenId)}
-                disabled={isVerifying || !tokenId}
-                className='min-w-[120px]'>
-                {isVerifying ? 'Verifying...' : 'Verify'}
-              </Button>
-              <Button asChild variant='outline' disabled={!tokenId}>
-                <Link href={renderHref} target='_blank' rel='noreferrer'>
-                  <ExternalLink className='w-4 h-4 mr-2' />
-                  View
-                </Link>
-              </Button>
+          {isCustomerMode ? (
+            <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3'>
+              <div className='space-y-1'>
+                <div className='text-sm font-semibold'>Passport verification</div>
+                <div className='text-xs text-muted-foreground'>
+                  Passport ID: <code className='break-all'>{tokenIdFromQuery}</code>
+                </div>
+              </div>
+              <div className='flex gap-2 flex-wrap'>
+                <Button onClick={() => void verifyToken(tokenIdFromQuery)} disabled={isVerifying || !tokenIdFromQuery}>
+                  {isVerifying ? 'Re-checking…' : 'Re-check'}
+                </Button>
+                <Button asChild variant='outline' disabled={!tokenIdFromQuery}>
+                  <Link href={renderHref} target='_blank' rel='noreferrer'>
+                    <ExternalLink className='w-4 h-4 mr-2' />
+                    View passport
+                  </Link>
+                </Button>
+              </div>
             </div>
-          </div>
-          
-          <Alert>
-            <AlertCircle className='h-4 w-4' />
-            <AlertDescription className='text-xs'>
-              This page verifies on-chain data, IPFS retrieval, and integrity checks. Signature verification depends on DID document availability.
-            </AlertDescription>
-          </Alert>
+          ) : (
+            <>
+              <div className='space-y-2'>
+                <Label>Passport ID</Label>
+                <div className='flex flex-col sm:flex-row gap-2'>
+                  <Input
+                    type='number'
+                    placeholder='Enter passport ID'
+                    value={tokenId}
+                    onChange={(e) => setTokenId(e.target.value)}
+                    disabled={isVerifying}
+                  />
+                  <Button
+                    onClick={() => void verifyToken(tokenId)}
+                    disabled={isVerifying || !tokenId}
+                    className='min-w-[120px]'>
+                    {isVerifying ? 'Checking…' : 'Check'}
+                  </Button>
+                  <Button asChild variant='outline' disabled={!tokenId}>
+                    <Link href={renderHref} target='_blank' rel='noreferrer'>
+                      <ExternalLink className='w-4 h-4 mr-2' />
+                      View passport
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+              <div className='text-xs text-muted-foreground'>
+                Tip: this ID is usually printed on a QR label or packaging.
+              </div>
+            </>
+          )}
         </div>
+
+        {/* Lookup by Product ID (operator use) */}
+        {!isCustomerMode && (
+          <details className='bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-6'>
+            <summary className='cursor-pointer text-sm font-semibold'>Find by product identifier (SKU/GTIN)</summary>
+            <div className='mt-3 space-y-3'>
+              <div className='text-xs text-muted-foreground'>
+                Use the same identifier format used when the passport was created (e.g. <code>GTIN:0123456789012</code> or your internal SKU).
+              </div>
+              <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
+                <div className='space-y-1 md:col-span-2'>
+                  <Label className='text-xs text-muted-foreground'>Product identifier</Label>
+                  <Input
+                    value={productLookup.productId}
+                    onChange={(e) => setProductLookup((p) => ({ ...p, productId: e.target.value }))}
+                    placeholder='e.g., GTIN:0123456789012'
+                    disabled={lookupBusy || isVerifying}
+                  />
+                </div>
+                <div className='space-y-1'>
+                  <Label className='text-xs text-muted-foreground'>Level</Label>
+                  <select
+                    className='w-full h-10 rounded-md border border-gray-200 dark:border-gray-800 bg-background px-3 text-sm'
+                    value={productLookup.granularity}
+                    onChange={(e) =>
+                      setProductLookup((p) => ({
+                        ...p,
+                        granularity: e.target.value as any,
+                        batchNumber: '',
+                        serialNumber: '',
+                      }))
+                    }
+                    disabled={lookupBusy || isVerifying}
+                  >
+                    <option value='ProductClass'>Model / SKU</option>
+                    <option value='Batch'>Batch / Lot</option>
+                    <option value='Item'>Serialized item</option>
+                  </select>
+                </div>
+              </div>
+
+              {productLookup.granularity === 'Batch' && (
+                <div className='space-y-1'>
+                  <Label className='text-xs text-muted-foreground'>Batch / Lot number</Label>
+                  <Input
+                    value={productLookup.batchNumber}
+                    onChange={(e) => setProductLookup((p) => ({ ...p, batchNumber: e.target.value }))}
+                    placeholder='e.g., LOT-2024-001'
+                    disabled={lookupBusy || isVerifying}
+                  />
+                </div>
+              )}
+
+              {productLookup.granularity === 'Item' && (
+                <div className='space-y-1'>
+                  <Label className='text-xs text-muted-foreground'>Serial number</Label>
+                  <Input
+                    value={productLookup.serialNumber}
+                    onChange={(e) => setProductLookup((p) => ({ ...p, serialNumber: e.target.value }))}
+                    placeholder='e.g., SN-000123'
+                    disabled={lookupBusy || isVerifying}
+                  />
+                </div>
+              )}
+
+              {lookupError ? (
+                <Alert variant='destructive'>
+                  <AlertCircle className='h-4 w-4' />
+                  <AlertTitle>Not found</AlertTitle>
+                  <AlertDescription>{lookupError}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              <div className='flex gap-2 flex-wrap'>
+                <Button
+                  onClick={() => void findByProductId()}
+                  disabled={
+                    lookupBusy ||
+                    isVerifying ||
+                    !productLookup.productId.trim() ||
+                    (productLookup.granularity === 'Batch' && !productLookup.batchNumber.trim()) ||
+                    (productLookup.granularity === 'Item' && !productLookup.serialNumber.trim())
+                  }
+                >
+                  {lookupBusy ? 'Searching…' : 'Find passport'}
+                </Button>
+              </div>
+            </div>
+          </details>
+        )}
 
         {/* Results Section */}
         {result && (
           <>
             {/* Overall Status */}
-            <div className={`p-4 rounded-lg border-2 ${
-              result.valid 
-                ? 'bg-green-50 dark:bg-green-950/20 border-green-500' 
-                : 'bg-red-50 dark:bg-red-950/20 border-red-500'
-            }`}>
-              <div className='flex items-center gap-2'>
-                {result.valid ? (
-                  <CheckCircle2 className='w-6 h-6 text-green-600 dark:text-green-400' />
-                ) : (
-                  <XCircle className='w-6 h-6 text-red-600 dark:text-red-400' />
-                )}
-                <div>
-                  <h3 className='text-lg font-semibold'>
-                    {result.valid ? 'Passport Valid' : 'Passport Invalid'}
-                  </h3>
-                  <p className='text-sm text-muted-foreground'>
-                    {result.valid 
-                      ? 'All verification checks passed' 
-                      : 'One or more checks failed'}
-                  </p>
+            <div className='grid grid-cols-1 lg:grid-cols-3 gap-4'>
+              <div className={`lg:col-span-2 p-5 rounded-lg border-2 ${
+                result.valid
+                  ? 'bg-green-50 dark:bg-green-950/20 border-green-500'
+                  : 'bg-red-50 dark:bg-red-950/20 border-red-500'
+              }`}>
+                <div className='flex items-start gap-3'>
+                  {result.valid ? (
+                    <CheckCircle2 className='w-7 h-7 text-green-600 dark:text-green-400 mt-0.5' />
+                  ) : (
+                    <XCircle className='w-7 h-7 text-red-600 dark:text-red-400 mt-0.5' />
+                  )}
+                  <div className='space-y-1 min-w-0'>
+                    <h3 className='text-xl font-semibold leading-tight'>
+                      {result.valid ? 'Authenticity confirmed' : 'Could not confirm authenticity'}
+                    </h3>
+                    <p className='text-sm text-muted-foreground'>
+                      {result.valid
+                        ? 'This passport matches its digital proof at the time of this check.'
+                        : 'This check failed or was incomplete. Avoid relying on this passport until it passes.'}
+                    </p>
+                    <div className='flex gap-2 flex-wrap mt-3'>
+                      <Button asChild variant='outline' disabled={!tokenId}>
+                        <Link href={renderHref} target='_blank' rel='noreferrer'>
+                          <ExternalLink className='w-4 h-4 mr-2' />
+                          View passport
+                        </Link>
+                      </Button>
+                      <Button onClick={() => void verifyToken(tokenId)} disabled={isVerifying || !tokenId}>
+                        {isVerifying ? 'Checking…' : 'Re-check'}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className='p-5 rounded-lg border border-gray-200 dark:border-gray-800 bg-white/40 dark:bg-gray-950'>
+                <div className='text-sm font-semibold'>What was checked</div>
+                <div className='mt-3 space-y-2 text-sm'>
+                  <div className='flex items-center justify-between gap-3'>
+                    <span className='text-muted-foreground'>Record exists</span>
+                    {result.checks.passportExists.passed ? (
+                      <CheckCircle2 className='w-4 h-4 text-green-600' />
+                    ) : (
+                      <XCircle className='w-4 h-4 text-red-600' />
+                    )}
+                  </div>
+                  <div className='flex items-center justify-between gap-3'>
+                    <span className='text-muted-foreground'>Not revoked</span>
+                    {result.checks.notRevoked.passed ? (
+                      <CheckCircle2 className='w-4 h-4 text-green-600' />
+                    ) : (
+                      <XCircle className='w-4 h-4 text-red-600' />
+                    )}
+                  </div>
+                  <div className='flex items-center justify-between gap-3'>
+                    <span className='text-muted-foreground'>Integrity match</span>
+                    {result.checks.hashMatches.passed ? (
+                      <CheckCircle2 className='w-4 h-4 text-green-600' />
+                    ) : (
+                      <XCircle className='w-4 h-4 text-red-600' />
+                    )}
+                  </div>
+                  <div className='flex items-center justify-between gap-3'>
+                    <span className='text-muted-foreground'>Issuer confirmed</span>
+                    {result.checks.issuerMatches.passed ? (
+                      <CheckCircle2 className='w-4 h-4 text-green-600' />
+                    ) : (
+                      <XCircle className='w-4 h-4 text-red-600' />
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
 
+            {(productName || manufacturerName || productIdentifier) && (
+              <div className='space-y-4 bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-6'>
+                <h3 className='text-lg font-semibold'>Product summary</h3>
+                <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
+                  <div className='md:col-span-1'>
+                    {coverImage?.url ? (
+                      <img
+                        src={coverImage.url}
+                        alt={coverImage.alt}
+                        className='w-full aspect-square object-cover rounded-lg border border-gray-200 dark:border-gray-800 bg-white'
+                      />
+                    ) : (
+                      <div className='w-full aspect-square rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex items-center justify-center text-xs text-muted-foreground'>
+                        No image
+                      </div>
+                    )}
+                  </div>
+                  <div className='space-y-1'>
+                    <Label className='text-xs text-muted-foreground'>Product</Label>
+                    <div className='text-sm font-medium'>{productName || '—'}</div>
+                    {productIdentifier ? (
+                      <div className='text-xs text-muted-foreground'>
+                        Identifier: <code className='break-all'>{productIdentifier}</code>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className='space-y-1'>
+                    <Label className='text-xs text-muted-foreground'>Issued by</Label>
+                    <div className='text-sm font-medium'>{issuerDisplayName}</div>
+                    {String(dppManufacturer?.identifier || '').trim() ? (
+                      <div className='text-xs text-muted-foreground'>
+                        Org ID: <code className='break-all'>{String(dppManufacturer.identifier).trim()}</code>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className='space-y-1'>
+                    <Label className='text-xs text-muted-foreground'>What you can learn</Label>
+                    <div className='text-sm'>
+                      <span className='font-medium'>{eventsCount}</span> history event(s) ·{' '}
+                      <span className='font-medium'>{claimsCount}</span> claim(s)
+                    </div>
+                    {batchNumber || serialNumber ? (
+                      <div className='text-xs text-muted-foreground'>
+                        {batchNumber ? <>Batch: <code>{batchNumber}</code></> : null}
+                        {batchNumber && serialNumber ? ' · ' : null}
+                        {serialNumber ? <>Serial: <code>{serialNumber}</code></> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Verification Checks */}
-            <div className='space-y-4 bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-6'>
-              <h3 className='text-lg font-semibold'>Verification Checks</h3>
-              <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+            <details className='bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-6'>
+              <summary className='cursor-pointer text-lg font-semibold'>Verification details</summary>
+              <div className='mt-2 text-sm text-muted-foreground'>
+                These checks explain why the passport is (or isn’t) considered trustworthy.
+              </div>
+              <div className='grid grid-cols-1 md:grid-cols-2 gap-3 mt-4'>
                 <CheckItem
                   icon={<FileJson className='w-5 h-5 text-blue-500' />}
-                  label='Passport Exists On-Chain'
+                  label='Public record exists'
                   check={result.checks.passportExists}
                 />
                 <CheckItem
                   icon={<Shield className='w-5 h-5 text-purple-500' />}
-                  label='Status: Not Revoked'
+                  label='Passport is active (not revoked)'
                   check={result.checks.notRevoked}
                 />
                 <CheckItem
                   icon={<ExternalLink className='w-5 h-5 text-cyan-500' />}
-                  label='Dataset Retrieved from IPFS'
+                  label='Digital record retrieved'
                   check={result.checks.datasetRetrieved}
                 />
                 <CheckItem
                   icon={<Hash className='w-5 h-5 text-orange-500' />}
-                  label='Payload Hash Matches'
+                  label='Data integrity confirmed'
                   check={result.checks.hashMatches}
                 />
                 <CheckItem
                   icon={<User className='w-5 h-5 text-green-500' />}
-                  label='Issuer Matches'
+                  label='Issuer identity confirmed'
                   check={result.checks.issuerMatches}
                 />
                 <CheckItem
                   icon={<Shield className='w-5 h-5 text-indigo-500' />}
-                  label='VC Signature Valid'
+                  label='Issuer signature valid'
                   check={result.checks.vcSignature}
                 />
                 <CheckItem
                   icon={<Code className='w-5 h-5 text-slate-600' />}
-                  label='VC Version Metadata'
+                  label='Version metadata (optional)'
                   check={versionMetadataCheck}
                 />
                 <CheckItem
                   icon={<Code className='w-5 h-5 text-slate-600' />}
-                  label='VC Token Metadata'
+                  label='Passport metadata (optional)'
                   check={tokenIdMetadataCheck}
                 />
               </div>
-            </div>
+            </details>
 
             {/* On-Chain Data */}
             {result.onChainData && (
-              <div className='space-y-4 bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-6'>
-                <h3 className='text-lg font-semibold'>On-Chain Data</h3>
+              <details className='bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-6'>
+                <summary className='cursor-pointer text-lg font-semibold'>Technical details (for support)</summary>
+                <div className='mt-4 space-y-4'>
+                <h3 className='text-lg font-semibold'>Public integrity reference</h3>
                 <div className='grid grid-cols-2 gap-4'>
                   <div className='space-y-1'>
-                    <Label className='text-xs text-muted-foreground'>Token ID</Label>
+                    <Label className='text-xs text-muted-foreground'>Passport ID</Label>
                     <p className='text-sm font-mono'>{result.onChainData.tokenId}</p>
                   </div>
                   <div className='space-y-1'>
@@ -375,25 +719,25 @@ export function DppVerify() {
                     <p className='text-sm'>{result.onChainData.version}</p>
                   </div>
                   <div className='space-y-1 col-span-2'>
-                    <Label className='text-xs text-muted-foreground'>VC Version Linkage</Label>
+                    <Label className='text-xs text-muted-foreground'>Version linkage</Label>
                     <div className='text-xs text-muted-foreground space-y-1'>
                       <div>
-                        <strong>VC version:</strong>{' '}
+                        <strong>Credential version:</strong>{' '}
                         <code className='mx-1'>{typeof vcVersion === 'number' ? vcVersion : 'N/A'}</code>
-                        <strong>On-chain:</strong>{' '}
+                        <strong>Public reference:</strong>{' '}
                         <code className='mx-1'>{typeof onChainVersion === 'number' ? onChainVersion : 'N/A'}</code>
                       </div>
                       {(vcPreviousPayloadHash || vcPreviousDatasetUri) && (
                         <div className='space-y-1'>
                           {vcPreviousPayloadHash && (
                             <div>
-                              <strong>Previous payload hash:</strong>{' '}
+                              <strong>Previous fingerprint:</strong>{' '}
                               <code className='break-all'>{String(vcPreviousPayloadHash)}</code>
                             </div>
                           )}
                           {vcPreviousDatasetUri && (
                             <div>
-                              <strong>Previous dataset URI:</strong>{' '}
+                              <strong>Previous record link:</strong>{' '}
                               <code className='break-all'>{String(vcPreviousDatasetUri)}</code>
                             </div>
                           )}
@@ -402,28 +746,37 @@ export function DppVerify() {
                     </div>
                   </div>
                   <div className='space-y-1 col-span-2'>
-                    <Label className='text-xs text-muted-foreground'>Issuer Account</Label>
-                    <div className='flex items-center gap-2'>
-                      <code className='text-xs break-all'>{vcIssuerAccount || 'N/A'}</code>
-                      {vcIssuerAccount && getExplorerAccountUrl(vcIssuerAccount) ? (
-                        <Button
-                          size='sm'
-                          variant='outline'
-                          onClick={() => window.open(getExplorerAccountUrl(vcIssuerAccount)!, '_blank', 'noopener,noreferrer')}
-                        >
-                          <ExternalLink className='w-3 h-3' />
-                        </Button>
-                      ) : null}
-                    </div>
+                    <Label className='text-xs text-muted-foreground'>Issued by</Label>
+                    <div className='text-sm font-medium'>{issuerDisplayName === '—' ? 'N/A' : issuerDisplayName}</div>
+                    <details className='mt-2'>
+                      <summary className='cursor-pointer text-xs text-muted-foreground'>
+                        Show technical issuer reference
+                      </summary>
+                      <div className='mt-2 flex items-center gap-2'>
+                        <code className='text-xs break-all'>{vcIssuerAccount || 'N/A'}</code>
+                        {vcIssuerAccount && getExplorerAccountUrl(vcIssuerAccount) ? (
+                          <Button
+                            size='sm'
+                            variant='outline'
+                            title='Open in block explorer (advanced)'
+                            onClick={() =>
+                              window.open(getExplorerAccountUrl(vcIssuerAccount)!, '_blank', 'noopener,noreferrer')
+                            }>
+                            <ExternalLink className='w-3 h-3' />
+                          </Button>
+                        ) : null}
+                      </div>
+                    </details>
                   </div>
                   <div className='space-y-1 col-span-2'>
-                    <Label className='text-xs text-muted-foreground'>Dataset URI</Label>
+                    <Label className='text-xs text-muted-foreground'>Digital record link</Label>
                     <div className='flex items-center gap-2'>
                       <code className='text-xs break-all flex-1'>{result.onChainData.datasetUri}</code>
                       {result.onChainData.datasetUri?.startsWith('ipfs://') && (
                         <Button
                           size='sm'
                           variant='outline'
+                          title='Open digital record (stored on IPFS)'
                           onClick={() => {
                             const cid = result.onChainData!.datasetUri.replace('ipfs://', '');
                             window.open(getIPFSGatewayURL(cid), '_blank', 'noopener,noreferrer');
@@ -434,7 +787,7 @@ export function DppVerify() {
                     </div>
                     {result.onChainData.datasetUri?.startsWith('ipfs://') && (
                       <div className='mt-1'>
-                        <Label className='text-xs text-muted-foreground'>IPFS CID:</Label>
+                        <Label className='text-xs text-muted-foreground' title='The content-addressed identifier of the digital record (CID).'>Record ID:</Label>
                         <code className='text-xs break-all ml-1 font-mono text-blue-600 dark:text-blue-400'>
                           {result.onChainData.datasetUri.replace('ipfs://', '')}
                         </code>
@@ -442,28 +795,30 @@ export function DppVerify() {
                     )}
                   </div>
                   <div className='space-y-1 col-span-2'>
-                    <Label className='text-xs text-muted-foreground'>Payload Hash</Label>
+                    <Label className='text-xs text-muted-foreground'>Digital fingerprint</Label>
                     <code className='text-xs break-all'>{result.onChainData.payloadHash}</code>
                   </div>
                   {result.onChainData.subjectIdHash && (
                     <div className='space-y-1 col-span-2'>
-                      <Label className='text-xs text-muted-foreground'>Subject ID Hash (v0.2)</Label>
+                      <Label className='text-xs text-muted-foreground'>Subject identifier hash (v0.2)</Label>
                       <code className='text-xs break-all'>{result.onChainData.subjectIdHash}</code>
                     </div>
                   )}
                 </div>
-              </div>
+                </div>
+              </details>
             )}
 
             {/* Dataset history */}
-            <div className='space-y-4 bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-6'>
-              <h3 className='text-lg font-semibold flex items-center gap-2'>
+            <details className='bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-6'>
+              <summary className='cursor-pointer text-lg font-semibold flex items-center gap-2'>
                 <Hash className='w-5 h-5' />
-                Dataset History
-              </h3>
-              <p className='text-sm text-muted-foreground'>
-                Each update publishes a new VC-JWT dataset to IPFS. The latest VC links to the previous one.
-              </p>
+                Record history (advanced)
+              </summary>
+              <div className='mt-4 space-y-4'>
+                <p className='text-sm text-muted-foreground'>
+                  Each update publishes a new signed record. The latest record links back to the previous one.
+                </p>
 
               {historyError ? (
                 <Alert variant='destructive'>
@@ -493,7 +848,7 @@ export function DppVerify() {
                           <div className='text-xs text-muted-foreground break-all mt-1'>{entry.datasetUri}</div>
                           {entry.payloadHash ? (
                             <div className='text-xs text-muted-foreground break-all mt-1'>
-                              Hash: {entry.payloadHash}
+                              Fingerprint: {entry.payloadHash}
                             </div>
                           ) : null}
                         </div>
@@ -506,19 +861,20 @@ export function DppVerify() {
                                   const qp = new URLSearchParams();
                                   qp.set('version', String(entry.derivedVersion));
                                   if (verificationKey) qp.set('key', verificationKey);
-                                  window.open(`/render/${encodeURIComponent(tokenId)}?${qp.toString()}`, '_blank', 'noopener,noreferrer');
-                                }}
-                              >
-                                Render
+                                    window.open(`/render/${encodeURIComponent(tokenId)}?${qp.toString()}`, '_blank', 'noopener,noreferrer');
+                                  }}
+                                >
+                                View passport
                               </Button>
                               {ipfsUrl ? (
                                 <Button
                                   size='sm'
                                   variant='outline'
+                                  title='Open digital record (stored on IPFS)'
                                   onClick={() => window.open(ipfsUrl, '_blank', 'noopener,noreferrer')}
                                 >
                                   <ExternalLink className='w-3 h-3 mr-2' />
-                                  Open
+                                  Open record
                                 </Button>
                               ) : null}
                             </div>
@@ -530,22 +886,24 @@ export function DppVerify() {
               ) : (
                 <div className='text-sm text-muted-foreground'>No history available.</div>
               )}
-            </div>
+              </div>
+            </details>
 
             {/* VC Data */}
             {result.vcData && (
-              <div className='space-y-4 bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-6'>
-                <h3 className='text-lg font-semibold flex items-center gap-2'>
+              <details className='bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-6'>
+                <summary className='cursor-pointer text-lg font-semibold flex items-center gap-2'>
                   <FileJson className='w-5 h-5' />
-                  Verifiable Credential (VC-JWT)
-                </h3>
+                  Signed credential (for support)
+                </summary>
+                <div className='mt-4 space-y-4'>
                 
                 {/* Raw JWT */}
                 {result.vcData.jwt && (
                   <details className='border border-gray-200 dark:border-gray-700 rounded-lg'>
                     <summary className='cursor-pointer p-3 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-900 rounded-t-lg flex items-center gap-2'>
                       <Code className='w-4 h-4' />
-                      View Raw JWT
+                      View raw credential
                     </summary>
                     <div className='p-3 bg-gray-50 dark:bg-gray-900 rounded-b-lg max-h-[200px] overflow-auto border-t border-gray-200 dark:border-gray-700'>
                       <code className='text-xs break-all whitespace-pre-wrap'>{result.vcData.jwt}</code>
@@ -558,7 +916,7 @@ export function DppVerify() {
                   <details className='border border-gray-200 dark:border-gray-700 rounded-lg'>
                     <summary className='cursor-pointer p-3 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-900 rounded-t-lg flex items-center gap-2'>
                       <FileJson className='w-4 h-4' />
-                      View Decoded Header
+                      View decoded header
                     </summary>
                     <div className='p-3 bg-gray-50 dark:bg-gray-900 rounded-b-lg max-h-[200px] overflow-auto border-t border-gray-200 dark:border-gray-700'>
                       <pre className='text-xs whitespace-pre-wrap'>{JSON.stringify(result.vcData.header, null, 2)}</pre>
@@ -571,7 +929,7 @@ export function DppVerify() {
                   <details className='border border-gray-200 dark:border-gray-700 rounded-lg'>
                     <summary className='cursor-pointer p-3 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-900 rounded-t-lg flex items-center gap-2'>
                       <FileJson className='w-4 h-4' />
-                      View Decoded Payload
+                      View decoded payload
                     </summary>
                     <div className='p-3 bg-gray-50 dark:bg-gray-900 rounded-b-lg max-h-[400px] overflow-auto border-t border-gray-200 dark:border-gray-700'>
                       <pre className='text-xs whitespace-pre-wrap'>{JSON.stringify(result.vcData.payload, null, 2)}</pre>
@@ -585,47 +943,49 @@ export function DppVerify() {
                     <div className='text-xs font-medium text-muted-foreground mb-1'>Signature (Base64URL)</div>
                     <code className='text-xs break-all'>{result.vcData.signature}</code>
                     <p className='text-xs text-muted-foreground mt-2'>
-                      Note: Signature is shown for display only. Cryptographic verification is performed separately.
+                      Signature is shown for reference only. Verification is performed by the checks above.
                     </p>
                   </div>
                 )}
-              </div>
+                </div>
+              </details>
             )}
 
             {/* DPP Data */}
             {result.dppData && (
-              <div className='space-y-4 bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-6'>
-                <div className='flex items-center justify-between'>
-                  <h3 className='text-lg font-semibold flex items-center gap-2'>
-                    <FileJson className='w-5 h-5' />
-                    Digital Product Passport (UNTP)
-                  </h3>
+              <details className='bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-6'>
+                <summary className='cursor-pointer text-lg font-semibold flex items-center gap-2'>
+                  <FileJson className='w-5 h-5' />
+                  Passport data (raw, for support)
+                </summary>
+                <div className='mt-4 space-y-4'>
                   {result.onChainData?.datasetUri?.startsWith('ipfs://') && (
                     <Button
                       size='sm'
                       variant='outline'
+                      title='Open digital record (stored on IPFS)'
                       onClick={() => {
                         const cid = result.onChainData!.datasetUri.replace('ipfs://', '');
                         window.open(getIPFSGatewayURL(cid), '_blank');
                       }}
                       className='flex items-center gap-2'>
                       <ExternalLink className='w-3 h-3' />
-                      View on IPFS
+                      Open record
                     </Button>
                   )}
-                </div>
-                <div className='bg-gray-50 dark:bg-gray-900 rounded p-4 max-h-[500px] overflow-auto border border-gray-200 dark:border-gray-700'>
-                  <pre className='text-xs whitespace-pre-wrap'>{JSON.stringify(result.dppData, null, 2)}</pre>
-                </div>
-                {result.onChainData?.datasetUri?.startsWith('ipfs://') && (
-                  <div className='text-xs text-muted-foreground'>
-                    <strong>IPFS CID:</strong>{' '}
-                    <code className='font-mono text-blue-600 dark:text-blue-400'>
-                      {result.onChainData.datasetUri.replace('ipfs://', '')}
-                    </code>
+                  <div className='bg-gray-50 dark:bg-gray-900 rounded p-4 max-h-[500px] overflow-auto border border-gray-200 dark:border-gray-700'>
+                    <pre className='text-xs whitespace-pre-wrap'>{JSON.stringify(result.dppData, null, 2)}</pre>
                   </div>
-                )}
-              </div>
+                  {result.onChainData?.datasetUri?.startsWith('ipfs://') && (
+                    <div className='text-xs text-muted-foreground'>
+                      <strong title='The content-addressed identifier of the digital record (CID).'>Record ID:</strong>{' '}
+                      <code className='font-mono text-blue-600 dark:text-blue-400'>
+                        {result.onChainData.datasetUri.replace('ipfs://', '')}
+                      </code>
+                    </div>
+                  )}
+                </div>
+              </details>
             )}
 
           </>
