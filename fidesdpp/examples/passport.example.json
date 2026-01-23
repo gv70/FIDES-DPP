@@ -3,17 +3,17 @@
   "productName": "Oak Dining Table",
   "productDescription": "Handcrafted oak dining table with sustainable wood sourcing",
   "granularity": "Batch",
-  "batchNumber": "BATCH-2026-001",
+  "batchNumber": "BATCH-2026-200",
   "manufacturer": {
     "name": "EcoFurniture Co.",
-    "identifier": "VAT-IT12345678901",
+    "identifier": "VAT-IT3124458901",
     "country": "IT",
     "facility": "Milan Factory"
   },
   "annexIII": {
     "uniqueProductId": "GTIN:0123456789012#BATCH-2026-001",
-    "gtin": "0123456789012",
-    "taricCode": "1234567890",
+    "gtin": "012323129012",
+    "taricCode": "1234524323890",
     "productImages": [
       {
         "url": "https://picsum.photos/seed/fidesdpp-table/1200/800",
@@ -23,7 +23,7 @@
     ],
     "importer": {
       "name": "EU Importer S.p.A.",
-      "eori": "IT1234567890123",
+      "eori": "IT12334232123",
       "contactEmail": "importer@example.com",
       "addressCountry": "IT"
     },
