@@ -135,7 +135,10 @@ fidesdpp/out-well-known/
 
 # Local CLI demo artifacts (do not commit)
 scripts/e2e-cli-demo.sh
-fidesdpp/examples/
+fidesdpp/examples/*
+!fidesdpp/examples/README.md
+!fidesdpp/examples/passport.example.json
+!fidesdpp/examples/passport.update.example.json
 fidesdpp/my-dpp*.json
 fidesdpp/did.json
 

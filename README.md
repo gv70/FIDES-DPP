@@ -169,10 +169,10 @@ npm run cli -- issuer verify --domain localhost%3A3000
 5) Create a passport (VC-JWT → IPFS → on-chain anchor):
 
 ```bash
-npm run cli -- create-vc --json ./my-create.json --account "" --key-type sr25519 --issuer-did localhost%3A3000 --json-output
+npm run cli -- create-vc --json examples/passport.example.json --account "" --key-type sr25519 --issuer-did localhost%3A3000 --json-output
 ```
 
-Minimal `create-vc` input shape (`./my-create.json`):
+Minimal `create-vc` input shape (see `fidesdpp/examples/passport.example.json`):
 
 ```json
 {
@@ -196,10 +196,10 @@ npm run cli -- verify-vc --token-id <TOKEN_ID>
 7) Update (new VC version → new IPFS CID → on-chain anchor update):
 
 ```bash
-npm run cli -- update --token-id <TOKEN_ID> --json ./my-update.json --account "" --key-type sr25519
+npm run cli -- update --token-id <TOKEN_ID> --json examples/passport.update.example.json --account "" --key-type sr25519
 ```
 
-Minimal `update` input shape (`./my-update.json`) is JSON-LD *credentialSubject* (not the `create-vc` shape):
+Minimal `update` input shape (see `fidesdpp/examples/passport.update.example.json`) is JSON-LD *credentialSubject* (not the `create-vc` shape):
 
 ```json
 {

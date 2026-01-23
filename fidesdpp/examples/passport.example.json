@@ -1,0 +1,47 @@
+{
+  "productId": "GTIN:0123456789012",
+  "productName": "Oak Dining Table",
+  "productDescription": "Handcrafted oak dining table with sustainable wood sourcing",
+  "granularity": "Batch",
+  "batchNumber": "BATCH-2026-001",
+  "manufacturer": {
+    "name": "EcoFurniture Co.",
+    "identifier": "VAT-IT12345678901",
+    "country": "IT",
+    "facility": "Milan Factory"
+  },
+  "annexIII": {
+    "uniqueProductId": "GTIN:0123456789012#BATCH-2026-001",
+    "gtin": "0123456789012",
+    "taricCode": "1234567890",
+    "productImages": [
+      {
+        "url": "https://picsum.photos/seed/fidesdpp-table/1200/800",
+        "mimeType": "image/jpeg",
+        "caption": "Oak dining table (example image)"
+      }
+    ],
+    "importer": {
+      "name": "EU Importer S.p.A.",
+      "eori": "IT1234567890123",
+      "contactEmail": "importer@example.com",
+      "addressCountry": "IT"
+    },
+    "complianceDocs": [
+      {
+        "type": "declaration-of-conformity",
+        "title": "Declaration of Conformity (example)",
+        "url": "https://example.com/docs/declaration-of-conformity.pdf"
+      }
+    ],
+    "userInformation": [
+      {
+        "type": "manual",
+        "title": "User Manual (example)",
+        "language": "en",
+        "url": "https://example.com/docs/user-manual.pdf"
+      }
+    ]
+  }
+}
+

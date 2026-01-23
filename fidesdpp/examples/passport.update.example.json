@@ -1,0 +1,22 @@
+{
+  "@type": "DigitalProductPassport",
+  "granularityLevel": "batch",
+  "product": {
+    "@type": "Product",
+    "identifier": "GTIN:0123456789012",
+    "name": "Oak Dining Table (v2)",
+    "description": "Updated description for the same batch",
+    "batchNumber": "BATCH-2026-001"
+  },
+  "manufacturer": {
+    "@type": "Organization",
+    "name": "EcoFurniture Co.",
+    "identifier": "VAT-IT12345678901",
+    "addressCountry": "IT",
+    "facility": {
+      "@type": "Facility",
+      "name": "Milan Factory"
+    }
+  }
+}
+

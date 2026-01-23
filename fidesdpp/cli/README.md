@@ -82,13 +82,13 @@ npm run cli -- issuer verify --domain localhost%3A3000
 4) Create a DPP (VC-JWT → IPFS → on-chain):
 
 ```bash
-npm run cli -- create-vc --json ./my-create.json --account "" --key-type sr25519 --issuer-did localhost%3A3000 --json-output
+npm run cli -- create-vc --json examples/passport.example.json --account "" --key-type sr25519 --issuer-did localhost%3A3000 --json-output
 ```
 
 5) Update:
 
 ```bash
-npm run cli -- update --token-id <TOKEN_ID> --json ./my-update.json --account "" --key-type sr25519
+npm run cli -- update --token-id <TOKEN_ID> --json examples/passport.update.example.json --account "" --key-type sr25519
 ```
 
 ### Issuer Management (did:web)
