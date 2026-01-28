@@ -24,6 +24,8 @@ import { usePilotContext } from '@/hooks/use-pilot-context';
 import { toast } from 'sonner';
 import { toEvmAddress } from 'dedot/contracts';
 
+type EventsSource = 'builder' | 'json';
+
 type PassportListItem = {
   tokenId: string;
   passport: {
@@ -112,6 +114,14 @@ function parseLines(text: string): string[] {
     .filter(Boolean);
 }
 
+function extractEventsFromJson(value: any): any[] {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.events)) return value.events;
+  if (Array.isArray(value?.credentialSubject)) return value.credentialSubject;
+  if (Array.isArray(value?.vc?.credentialSubject)) return value.vc.credentialSubject;
+  return [];
+}
+
 function toIsoLocalNow(): string {
   const d = new Date();
   return d.toISOString();
@@ -193,6 +203,11 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
   const [verifyResult, setVerifyResult] = useState<DteVerifyResponse | null>(null);
   const [discoveryResult, setDiscoveryResult] = useState<DteByProductResponse | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const [eventsSource, setEventsSource] = useState<EventsSource>('builder');
+  const [eventsJsonText, setEventsJsonText] = useState<string>('');
+  const [eventsJsonParsed, setEventsJsonParsed] = useState<any[] | null>(null);
+  const [eventsJsonError, setEventsJsonError] = useState<string>('');
 
   const walletEvmAddress = useMemo(() => {
     if (!connectedAddress) return '';
@@ -370,7 +385,45 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
     selectedProductName,
   ]);
 
-  const eventsJsonPreview = useMemo(() => JSON.stringify(eventsArray, null, 2), [eventsArray]);
+  const eventsForSubmit = useMemo(() => {
+    if (eventsSource === 'json') return Array.isArray(eventsJsonParsed) ? eventsJsonParsed : [];
+    return eventsArray;
+  }, [eventsArray, eventsJsonParsed, eventsSource]);
+
+  const eventsJsonForSubmitPreview = useMemo(() => JSON.stringify(eventsForSubmit, null, 2), [eventsForSubmit]);
+
+  const loadEventsJson = (rawText: string) => {
+    setValidation(null);
+    setIssueResult(null);
+    setVerifyResult(null);
+    setDiscoveryResult(null);
+
+    try {
+      const parsed = JSON.parse(rawText);
+      const events = extractEventsFromJson(parsed);
+      if (!Array.isArray(events) || events.length === 0) {
+        throw new Error('No events found. Expected an array, or an object with `events: []`.');
+      }
+      const normalized = events.filter((e) => e && typeof e === 'object');
+      if (normalized.length === 0) {
+        throw new Error('Events array is empty after filtering invalid entries.');
+      }
+      setEventsJsonParsed(normalized);
+      setEventsJsonError('');
+      setEventsSource('json');
+      toast.success(`Loaded ${normalized.length} event(s) from JSON`);
+    } catch (e: any) {
+      setEventsJsonParsed(null);
+      setEventsJsonError(e?.message || 'Invalid JSON');
+      toast.error(e?.message || 'Invalid JSON');
+    }
+  };
+
+  const onUploadEventsJsonFile = async (file: File) => {
+    const text = await file.text();
+    setEventsJsonText(text);
+    loadEventsJson(text);
+  };
 
   const loadPassports = async () => {
     setLoadingPassports(true);
@@ -480,12 +533,16 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
         throw new Error('Issuer identity is required (did:web:...)');
       }
 
+      if (!Array.isArray(eventsForSubmit) || eventsForSubmit.length === 0) {
+        throw new Error('No events to validate');
+      }
+
       const res = await fetch('/api/untp/dte/validate-events', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           issuerDid,
-          events: eventsArray,
+          events: eventsForSubmit,
         }),
       });
       const json = (await res.json()) as ValidateEventsResponse;
@@ -507,12 +564,16 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
         throw new Error('Issuer identity is required (did:web:...)');
       }
 
+      if (!Array.isArray(eventsForSubmit) || eventsForSubmit.length === 0) {
+        throw new Error('No events to publish');
+      }
+
       const res = await fetch('/api/untp/dte/issue', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           issuerDid,
-          events: eventsArray,
+          events: eventsForSubmit,
         }),
       });
       const json = (await res.json()) as IssueResponse;
@@ -1150,9 +1211,91 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
               </Button>
               {showAdvanced && (
                 <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+                  <div className='space-y-2 md:col-span-2 border rounded-lg p-4'>
+                    <div className='font-medium'>Events JSON input</div>
+                    <div className='text-xs text-muted-foreground'>
+                      Use the builder above, or upload/paste a JSON array (or an object with <code>events</code>).
+                    </div>
+
+                    <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+                      <div className='space-y-2'>
+                        <Label>Mode</Label>
+                        <Select value={eventsSource} onValueChange={(v) => setEventsSource(v as EventsSource)} disabled={busy}>
+                          <SelectTrigger>
+                            <SelectValue placeholder='Select mode' />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value='builder'>Use builder-generated events</SelectItem>
+                            <SelectItem value='json'>Use uploaded/pasted JSON</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {eventsSource === 'json' && (
+                          <>
+                            <Label htmlFor='dte-events-file'>Upload JSON file</Label>
+                            <Input
+                              id='dte-events-file'
+                              type='file'
+                              accept='.json,application/json'
+                              disabled={busy}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                void onUploadEventsJsonFile(file);
+                              }}
+                            />
+                          </>
+                        )}
+                      </div>
+
+                      <div className='space-y-2'>
+                        <Label htmlFor='dte-events-json'>Events JSON</Label>
+                        <Textarea
+                          id='dte-events-json'
+                          value={eventsJsonText}
+                          onChange={(e) => setEventsJsonText(e.target.value)}
+                          placeholder='Paste events JSON here...'
+                          className='min-h-[140px] font-mono text-xs'
+                          disabled={busy || eventsSource !== 'json'}
+                        />
+                        <div className='flex gap-2'>
+                          <Button
+                            type='button'
+                            size='sm'
+                            variant='outline'
+                            disabled={busy || eventsSource !== 'json' || !eventsJsonText.trim()}
+                            onClick={() => loadEventsJson(eventsJsonText)}
+                          >
+                            Load JSON
+                          </Button>
+                          <Button
+                            type='button'
+                            size='sm'
+                            variant='outline'
+                            disabled={busy}
+                            onClick={() => {
+                              setEventsSource('builder');
+                              setEventsJsonError('');
+                              toast.success('Using builder events');
+                            }}
+                          >
+                            Use builder
+                          </Button>
+                        </div>
+                        {eventsJsonError && (
+                          <div className='text-xs text-destructive whitespace-pre-wrap'>{eventsJsonError}</div>
+                        )}
+                        {eventsSource === 'json' && eventsJsonParsed && (
+                          <div className='text-xs text-muted-foreground'>
+                            Loaded: <code>{eventsJsonParsed.length}</code> event(s)
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   <div className='space-y-2 md:col-span-2'>
-                    <Label>Preview (generated Events JSON)</Label>
-                    <Textarea value={eventsJsonPreview} readOnly className='min-h-[140px] font-mono text-xs' />
+                    <Label>Preview (Events JSON to be submitted)</Label>
+                    <Textarea value={eventsJsonForSubmitPreview} readOnly className='min-h-[140px] font-mono text-xs' />
                   </div>
                 </div>
               )}
