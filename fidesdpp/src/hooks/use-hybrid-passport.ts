@@ -502,6 +502,7 @@ export function useHybridPassport(): UseHybridPassportReturn {
           registrationData.datasetType,
           granularity,
           subjectIdHashHex, // FixedBytes<32> | undefined - hex string "0x..." or undefined
+          {}, // Options (last parameter) - empty object for auto-estimate
         );
         
         console.log('[useHybridPassport] Transaction created successfully:', {

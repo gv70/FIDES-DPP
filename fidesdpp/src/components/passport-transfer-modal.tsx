@@ -125,7 +125,7 @@ export function PassportTransferModal({ open, onOpenChange, tokenId: initialToke
         throw new Error(ownerCheckError?.message || 'Ownership check failed');
       }
 
-      const tx = (contract as any).tx.transfer(destination, tokenIdBigInt);
+      const tx = (contract as any).tx.transfer(destination, tokenIdBigInt, {});
 
       await tx
         .signAndSend(connectedAccount.address, (progress: any) => {

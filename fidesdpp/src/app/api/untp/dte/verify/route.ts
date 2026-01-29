@@ -133,7 +133,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Best-effort indexing on verify (useful if the DTE was issued externally)
-    let indexing: { attempted: boolean; records: number; error?: string } = { attempted: false, records: 0 };
+    let indexing: { attempted: boolean; records: number; error?: string; warning?: string } = {
+      attempted: false,
+      records: 0,
+    };
     try {
       const events = extractedEvents;
       const issuerDid = String(

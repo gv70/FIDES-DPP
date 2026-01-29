@@ -3,12 +3,128 @@ import { guessEventTime, guessEventType } from '@/lib/dte/dte-indexing';
 import type { PassportRenderData, RenderDteDetails } from '@/lib/render/getPassportRenderData';
 import RenderPassportClient from '../render/[tokenId]/render-passport-client';
 
-import passport103576 from '../../../examples/passport.rmb.103576.trc-20250210.json';
-import dte103576 from '../../../examples/dte.rmb.103576.trc-20250210.events.json';
-import passportEbag from '../../../examples/passport.rmb.EBAG93N0672L.trc-20250206.json';
-import dteEbag from '../../../examples/dte.rmb.EBAG93N0672L.trc-20250206.events.json';
-
 export const dynamic = 'force-dynamic';
+
+/**
+ * IMPORTANT:
+ * This route must not import JSON files from `fidesdpp/examples/*` because that folder is gitignored
+ * (the JSONs are intentionally not committed). For production builds, we keep small, hardcoded demo
+ * data here and let users upload/paste their own JSON via the Traceability/Passports pages.
+ */
+const DEMO_PASSPORT_EBAG = {
+  productId: 'EBAG93N0672L',
+  productName: 'EBAG93N0672L',
+  productDescription: 'Esempio: prodotto finito con eventi di tracciabilità associati.',
+  granularity: 'Batch',
+  batchNumber: 'TRC-20250206',
+  manufacturer: {
+    name: 'RMB',
+    identifier: 'VAT-IT08578612736',
+    country: 'IT',
+  },
+  annexIII: {
+    productImages: [
+      {
+        url: 'https://example.com/images/EBAG93N0672L.jpg',
+        alt: 'Immagine prodotto (esempio)',
+      },
+    ],
+  },
+};
+
+const DEMO_DTE_EBAG = [
+  {
+    type: ['TransformationEvent', 'Event'],
+    eventTime: '2025-02-06T00:00:00Z',
+    eventTimeZoneOffset: '+01:00',
+    action: 'add',
+    processType: 'assembly',
+    outputEPCList: [
+      {
+        type: ['Item'],
+        id: 'EBAG93N0672L#TRC-20250206',
+        name: 'EBAG93N0672L (lotto: TRC-20250206)',
+      },
+    ],
+    inputEPCList: [
+      {
+        type: ['Item'],
+        id: '100001#230060-01',
+        name: 'BUSTA IN TYVEK (lotto: 230060-01)',
+      },
+      {
+        type: ['Item'],
+        id: '200056#1036/24',
+        name: 'ORTHAX PEEK D14 (lotto: 1036/24)',
+      },
+    ],
+    outputQuantityList: [
+      {
+        productId: 'EBAG93N0672L',
+        productName: 'EBAG93N0672L',
+        quantity: 1,
+        uom: 'EA',
+      },
+    ],
+    supportingDocuments: [
+      {
+        href: 'https://example.com/specs/200056/1036-24.pdf',
+        title: 'Specifica componente 200056 lotto 1036/24 (esempio)',
+      },
+    ],
+  },
+];
+
+const DEMO_PASSPORT_103576 = {
+  productId: '103576',
+  productName: 'IMPLAX CACCIAVITE CANN. BTX8 SLIM KW 12',
+  productDescription: 'Esempio: prodotto finito con un componente tracciato per lotto.',
+  granularity: 'Batch',
+  batchNumber: 'TRC-20250210',
+  manufacturer: {
+    name: 'RMB',
+    identifier: 'VAT-IT08578612736',
+    country: 'IT',
+  },
+};
+
+const DEMO_DTE_103576 = [
+  {
+    type: ['TransformationEvent', 'Event'],
+    eventTime: '2025-02-10T00:00:00Z',
+    eventTimeZoneOffset: '+01:00',
+    action: 'add',
+    processType: 'assembly',
+    outputEPCList: [
+      {
+        type: ['Item'],
+        id: '103576#TRC-20250210',
+        name: 'IMPLAX CACCIAVITE CANN. BTX8 SLIM KW 12',
+      },
+    ],
+    inputEPCList: [
+      {
+        type: ['Item'],
+        id: '10202#D42268',
+        name: 'BARRA Ø6 CRONIDUR 30 ASTMF899:23 (lotto: D42268)',
+      },
+    ],
+    outputQuantityList: [
+      {
+        productId: '103576',
+        productName: 'IMPLAX CACCIAVITE CANN. BTX8 SLIM KW 12',
+        quantity: 1,
+        uom: 'EA',
+      },
+    ],
+    supportingDocuments: [
+      {
+        href: 'https://example.com/specs/10202/D42268.pdf',
+        title: 'Specifica componente 10202 lotto D42268 (esempio)',
+      },
+    ],
+  },
+];
 
 function extractEvidenceLinks(obj: any): Array<{ href: string; label?: string }> {
   const out: Array<{ href: string; label?: string }> = [];
@@ -135,8 +251,8 @@ export default async function RenderDemoPage(props: {
       label: 'EBAG93N0672L (demo)',
       data: toDemoRenderData({
         tokenId: 'DEMO-EBAG93N0672L',
-        passport: passportEbag,
-        events: Array.isArray(dteEbag) ? dteEbag : [],
+        passport: DEMO_PASSPORT_EBAG,
+        events: DEMO_DTE_EBAG,
         issuerName: 'RMB',
         issuerDid: 'did:web:rmb.example',
         locale: 'it',
@@ -146,8 +262,8 @@ export default async function RenderDemoPage(props: {
       label: '103576 (demo)',
       data: toDemoRenderData({
         tokenId: 'DEMO-103576',
-        passport: passport103576,
-        events: Array.isArray(dte103576) ? dte103576 : [],
+        passport: DEMO_PASSPORT_103576,
+        events: DEMO_DTE_103576,
         issuerName: 'RMB',
         issuerDid: 'did:web:rmb.example',
         locale: 'it',

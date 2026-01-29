@@ -530,6 +530,7 @@ export function PassportUpdateModal({
         payloadHashHex,
         prepared.updateData.datasetType,
         subjectIdHashHex,
+        {},
       );
 
       await tx

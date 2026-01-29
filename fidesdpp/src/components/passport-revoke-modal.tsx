@@ -104,6 +104,7 @@ export function PassportRevokeModal({ open, onOpenChange, tokenId: initialTokenI
       const tx = (contract as any).tx.revokePassport(
         BigInt(tokenId),
         reason || undefined,
+        {},
       );
 
       await tx
