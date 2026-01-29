@@ -18,6 +18,7 @@ import { createDteIndexStorage } from '../../../lib/dte/createDteIndexStorage';
 import { deriveLookupAliases, guessEventTime, guessEventType } from '../../../lib/dte/dte-indexing';
 import { getDidWebManager } from '../../../lib/vc/did-web-manager';
 import { buildIssuerDirectory, normalizeH160, type IssuerDirectoryEntry } from '../../../lib/issuer/issuer-directory';
+import { getDtePreview } from '../../../lib/preview/dtePreviewStore';
 
 export async function GET(
   request: NextRequest,
@@ -25,6 +26,7 @@ export async function GET(
 ): Promise<NextResponse> {
   const { tokenId } = await context.params;
   const verifyKey = request.nextUrl.searchParams.get('key') || undefined;
+  const previewDteId = request.nextUrl.searchParams.get('previewDte') || request.nextUrl.searchParams.get('preview');
   const requestedVersionRaw = request.nextUrl.searchParams.get('version') || request.nextUrl.searchParams.get('v');
   const requestedVersion = requestedVersionRaw ? Number(String(requestedVersionRaw)) : undefined;
 
@@ -149,6 +151,79 @@ export async function GET(
           }>;
         }>
       | undefined;
+
+    // Optional: preview mode (inject not-yet-published DTE events)
+    try {
+      const preview = previewDteId ? getDtePreview(String(previewDteId)) : null;
+      if (preview && String(preview.tokenId) === String(tokenId)) {
+        const issuerDid = String(preview.issuerDid || 'urn:preview:issuer').trim() || 'urn:preview:issuer';
+        const issuerName = String(preview.issuerName || 'Preview issuer').trim() || 'Preview issuer';
+        const renderBaseUrl = (process.env.RENDER_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+        const cid = `preview:${preview.id}`;
+
+        const extractEvidenceLinks = (obj: any): Array<{ href: string; label?: string }> => {
+          const out: Array<{ href: string; label?: string }> = [];
+          const add = (href: any, label?: any) => {
+            const url = typeof href === 'string' ? href.trim() : '';
+            if (!url) return;
+            out.push({ href: url, ...(label ? { label: String(label) } : {}) });
+          };
+
+          const candidates = [obj?.evidence, obj?.supportingDocuments, obj?.documents, obj?.links];
+          for (const c of candidates) {
+            if (Array.isArray(c)) {
+              for (const item of c) {
+                if (typeof item === 'string') add(item);
+                else add(item?.id || item?.url || item?.href, item?.title || item?.name || item?.label);
+              }
+            }
+          }
+          return out;
+        };
+
+        const eventSummary = (ev: any): string => {
+          const parts: string[] = [];
+          const input = Array.isArray(ev?.inputEPCList) ? ev.inputEPCList.length : 0;
+          const output = Array.isArray(ev?.outputEPCList) ? ev.outputEPCList.length : 0;
+          const qtyIn = Array.isArray(ev?.inputQuantityList) ? ev.inputQuantityList.length : 0;
+          const qtyOut = Array.isArray(ev?.outputQuantityList) ? ev.outputQuantityList.length : 0;
+          if (input) parts.push(`inputs: ${input}`);
+          if (output) parts.push(`outputs: ${output}`);
+          if (qtyIn) parts.push(`input quantities: ${qtyIn}`);
+          if (qtyOut) parts.push(`output quantities: ${qtyOut}`);
+          const location = ev?.readPoint?.id || ev?.bizLocation?.id || ev?.readPoint || ev?.bizLocation;
+          if (location) parts.push(`location: ${String(location)}`);
+          return parts.join(' · ');
+        };
+
+        const events = (Array.isArray(preview.events) ? preview.events : []).map((ev: any) => ({
+          eventType: guessEventType(ev),
+          eventTime: guessEventTime(ev),
+          summary: eventSummary(ev),
+          evidence: extractEvidenceLinks(ev),
+          raw: ev,
+        }));
+
+        relatedDtes = [
+          {
+            cid,
+            href: `${renderBaseUrl}/api/render/preview-dte?id=${encodeURIComponent(preview.id)}`,
+            title: `DTE (preview)${events[0]?.eventTime ? ` @ ${String(events[0].eventTime)}` : ''}`,
+          },
+        ];
+        relatedDteDetails = [
+          {
+            cid,
+            issuerDid,
+            issuerName,
+            events,
+          },
+        ];
+      }
+    } catch {
+      // Ignore preview errors and fall back to normal discovery.
+    }
+
     try {
       const productIdentifier = String((dpp.product as any)?.registeredId || (dpp as any)?.product?.identifier || '').trim();
       if (productIdentifier) {
@@ -168,11 +243,16 @@ export async function GET(
         }
 
         const renderBaseUrl = (process.env.RENDER_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-        relatedDtes = Array.from(byCid.values()).map((d) => ({
-          cid: d.cid,
-          href: `${renderBaseUrl}/api/untp/dte/vc?cid=${encodeURIComponent(d.cid)}`,
-          title: d.title,
-        }));
+        {
+          const discovered = Array.from(byCid.values()).map((d) => ({
+            cid: d.cid,
+            href: `${renderBaseUrl}/api/untp/dte/vc?cid=${encodeURIComponent(d.cid)}`,
+            title: d.title,
+          }));
+          const byCidOut = new Map<string, { cid: string; href: string; title: string }>();
+          for (const it of [...relatedDtes, ...discovered]) byCidOut.set(it.cid, it);
+          relatedDtes = Array.from(byCidOut.values());
+        }
 
         // Best-effort: fetch and render the DTE contents inline (limit to keep page fast).
         // This makes the page usable without forcing users to open raw VC-JWTs.
@@ -222,7 +302,7 @@ export async function GET(
           return parts.join(' · ');
         };
 
-        relatedDteDetails = [];
+        relatedDteDetails = Array.isArray(relatedDteDetails) ? relatedDteDetails : [];
         for (const d of toLoad) {
           try {
             const jwtText = (await ipfsBackend.retrieveText(d.cid)).data;

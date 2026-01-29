@@ -157,6 +157,7 @@ vercel-did-site/
 **/node_modules/
 **/.next/
 **/.turbo/
+fidesdpp/.npm-cache/
 
 # IDE files
 **/.git/

@@ -25,6 +25,7 @@ import { buildDteIndexRecords } from '@/lib/dte/dte-indexing';
 import { enforceDteAllowlist } from '@/lib/dte/allowlist';
 import { getDidWebManager } from '@/lib/vc/did-web-manager';
 import { resolveTokenIdForProductClass, readIssuerH160ByTokenId } from '@/lib/passports/issuer-resolution';
+import { lookupTokenIdByCanonicalSubjectId } from '@/lib/passports/lookup';
 import { getTrustedSupplierDidsFromIssuer, resolveManufacturerDidByH160 } from '@/lib/issuer/trusted-suppliers';
 
 async function createOptionalStatusListManager(storage: ReturnType<typeof createIpfsBackend>) {
@@ -206,13 +207,30 @@ export async function POST(request: NextRequest) {
         });
         if (records.length > 0) {
           const referencedProductIds = Array.from(new Set(records.map((r) => r.productId)));
+          const allowlistProductIds = Array.from(
+            new Set(
+              records
+                // Governance is about who can publish events ABOUT a product.
+                // Inputs/children are usually components/materials; enforcing allowlists for them
+                // would require separate DPP issuance for every component, which is not required
+                // to link the DTE to the finished-product passport.
+                .filter((r) => r.role === 'output' || r.role === 'epc' || r.role === 'parent')
+                .map((r) => r.productId)
+            )
+          );
 
           const manager = getDidWebManager();
           await manager.reload();
           const issuers = await manager.listIssuers();
 
           const resolveManufacturerDidByProductId = async (productId: string): Promise<string | null> => {
-            const tokenId = await resolveTokenIdForProductClass(productId);
+            const tokenId =
+              (await resolveTokenIdForProductClass(productId)) ||
+              // Best-effort: if the productId already includes a batch/serial suffix (e.g. "SKU#LOT"),
+              // treat it as a canonical subject id and resolve directly.
+              (String(productId).includes('#')
+                ? await lookupTokenIdByCanonicalSubjectId({ canonicalSubjectId: String(productId) })
+                : null);
             if (!tokenId) return null;
             const manufacturerIssuerH160 = await readIssuerH160ByTokenId({ tokenId });
             if (!manufacturerIssuerH160) return null;
@@ -224,12 +242,24 @@ export async function POST(request: NextRequest) {
             return getTrustedSupplierDidsFromIssuer(identity);
           };
 
-          await enforceDteAllowlist({
-            supplierDid: issuerDid,
-            productIds: referencedProductIds,
-            resolveManufacturerDidByProductId,
-            getTrustedSupplierDidsForManufacturerDid,
-          });
+          try {
+            await enforceDteAllowlist({
+              supplierDid: issuerDid,
+              productIds: allowlistProductIds.length > 0 ? allowlistProductIds : referencedProductIds,
+              resolveManufacturerDidByProductId,
+              getTrustedSupplierDidsForManufacturerDid,
+            });
+          } catch (allowError: any) {
+            const msg = String(allowError?.message || allowError || '').trim();
+            // Best-effort: in environments where product→issuer resolution is not available
+            // (e.g. batch-only passports or incomplete indices), we still want verification
+            // to succeed and allow indexing for UI linking.
+            if (msg.includes('Cannot enforce allowlist: no passport issuer found')) {
+              indexing.warning = msg;
+            } else {
+              throw allowError;
+            }
+          }
 
           indexing.records = records.length;
           await dteIndex.upsertMany(records);

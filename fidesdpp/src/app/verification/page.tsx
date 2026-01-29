@@ -5,7 +5,7 @@ import { DppVerify } from '@/components/dpp-verify';
 
 export default function VerificationPage() {
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-5xl p-6 space-y-6">
       {/* Page Header */}
       <div>
         <h1 className="text-3xl font-semibold">Verify this product</h1>

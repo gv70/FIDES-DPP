@@ -64,6 +64,7 @@ export class PostgresDteIndexStorage implements DteIndexStorage {
     if (!records || records.length === 0) return;
     await this.ensureSchema();
 
+    const paramsPerRow = 10; // created_at is NOW()
     const query = `
       INSERT INTO dte_event_index
         (product_id, dte_cid, dte_uri, gateway_url, issuer_did, credential_id, event_id, event_type, event_time, role, created_at)
@@ -71,7 +72,7 @@ export class PostgresDteIndexStorage implements DteIndexStorage {
         ${records
           .map(
             (_, i) =>
-              `($${i * 11 + 1}, $${i * 11 + 2}, $${i * 11 + 3}, $${i * 11 + 4}, $${i * 11 + 5}, $${i * 11 + 6}, $${i * 11 + 7}, $${i * 11 + 8}, $${i * 11 + 9}, $${i * 11 + 10}, NOW())`
+              `($${i * paramsPerRow + 1}, $${i * paramsPerRow + 2}, $${i * paramsPerRow + 3}, $${i * paramsPerRow + 4}, $${i * paramsPerRow + 5}, $${i * paramsPerRow + 6}, $${i * paramsPerRow + 7}, $${i * paramsPerRow + 8}, $${i * paramsPerRow + 9}, $${i * paramsPerRow + 10}, NOW())`
           )
           .join(',\n')}
       ON CONFLICT (product_id, dte_cid, event_id, role)

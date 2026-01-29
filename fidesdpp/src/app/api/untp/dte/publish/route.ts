@@ -24,6 +24,7 @@ import { buildDteIndexRecords } from '@/lib/dte/dte-indexing';
 import { enforceDteAllowlist } from '@/lib/dte/allowlist';
 import { getDidWebManager } from '@/lib/vc/did-web-manager';
 import { resolveTokenIdForProductClass, readIssuerH160ByTokenId } from '@/lib/passports/issuer-resolution';
+import { lookupTokenIdByCanonicalSubjectId } from '@/lib/passports/lookup';
 import { getTrustedSupplierDidsFromIssuer, resolveManufacturerDidByH160 } from '@/lib/issuer/trusted-suppliers';
 import 'server-only';
 
@@ -103,13 +104,24 @@ export async function POST(request: NextRequest) {
       dteCid: 'bafy-temp',
     });
     const referencedProductIds = Array.from(new Set(draftRecords.map((r) => r.productId)));
+    const allowlistProductIds = Array.from(
+      new Set(
+        draftRecords
+          .filter((r) => r.role === 'output' || r.role === 'epc' || r.role === 'parent')
+          .map((r) => r.productId)
+      )
+    );
 
     const manager = getDidWebManager();
     await manager.reload();
     const issuers = await manager.listIssuers();
 
     const resolveManufacturerDidByProductId = async (productId: string): Promise<string | null> => {
-      const tokenId = await resolveTokenIdForProductClass(productId);
+      const tokenId =
+        (await resolveTokenIdForProductClass(productId)) ||
+        (String(productId).includes('#')
+          ? await lookupTokenIdByCanonicalSubjectId({ canonicalSubjectId: String(productId) })
+          : null);
       if (!tokenId) return null;
       const manufacturerIssuerH160 = await readIssuerH160ByTokenId({ tokenId });
       if (!manufacturerIssuerH160) return null;
@@ -124,7 +136,7 @@ export async function POST(request: NextRequest) {
     // Enforce allowlist before upload/indexing.
     await enforceDteAllowlist({
       supplierDid: issuerDid,
-      productIds: referencedProductIds,
+      productIds: allowlistProductIds.length > 0 ? allowlistProductIds : referencedProductIds,
       resolveManufacturerDidByProductId,
       getTrustedSupplierDidsForManufacturerDid,
     });

@@ -10,7 +10,7 @@
 
 'use client';
 
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTypink } from 'typink';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -95,6 +95,184 @@ type DteByProductResponse = {
   message?: string;
 };
 
+function guessEventType(event: any): string {
+  const types = Array.isArray(event?.type) ? event.type : event?.type ? [event.type] : [];
+  const asStrings = types.map((t: any) => String(t)).filter(Boolean);
+  const preferred = asStrings.find((t: string) => t.endsWith('Event') && t !== 'Event');
+  return preferred || asStrings[0] || 'Traceability event';
+}
+
+function guessEventTime(event: any): string {
+  const v = event?.eventTime || event?.event_time || event?.time;
+  const s = typeof v === 'string' ? v.trim() : '';
+  if (!s) return '';
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  return d.toISOString();
+}
+
+function extractEvidenceLinks(obj: any): Array<{ href: string; label?: string }> {
+  const out: Array<{ href: string; label?: string }> = [];
+  const add = (href: any, label?: any) => {
+    const url = typeof href === 'string' ? href.trim() : '';
+    if (!url) return;
+    out.push({ href: url, ...(label ? { label: String(label) } : {}) });
+  };
+
+  const candidates = [obj?.evidence, obj?.supportingDocuments, obj?.documents, obj?.links];
+  for (const c of candidates) {
+    if (Array.isArray(c)) {
+      for (const item of c) {
+        if (typeof item === 'string') add(item);
+        else add(item?.id || item?.url || item?.href, item?.title || item?.name || item?.label);
+      }
+    }
+  }
+  return out;
+}
+
+function RenderedDtePreview(props: { events: any[]; maxEvents?: number }) {
+  const maxEvents = Number.isFinite(props.maxEvents) ? Number(props.maxEvents) : 20;
+  const events = Array.isArray(props.events) ? props.events.filter((e) => e && typeof e === 'object') : [];
+  if (events.length === 0) return null;
+
+  return (
+    <div className='space-y-3 border rounded-lg p-4'>
+      <div className='font-medium'>Rendered preview (DTE)</div>
+      <div className='text-xs text-muted-foreground'>
+        Preview of how these events will appear once published and linked to a passport.
+      </div>
+
+      <div className='space-y-3'>
+        {events.slice(0, maxEvents).map((ev, idx) => {
+          const outputs = Array.isArray(ev?.outputEPCList) ? ev.outputEPCList : [];
+          const inputs = Array.isArray(ev?.inputEPCList) ? ev.inputEPCList : [];
+          const qIn = Array.isArray(ev?.inputQuantityList) ? ev.inputQuantityList : [];
+          const qOut = Array.isArray(ev?.outputQuantityList) ? ev.outputQuantityList : [];
+          const locationRaw =
+            ev?.bizLocation?.id || ev?.bizLocation || ev?.readPoint?.id || ev?.readPoint || ev?.location || ev?.facility || '';
+          const location = String(locationRaw || '').trim();
+          const evidence = extractEvidenceLinks(ev);
+
+          const previewList = (list: any[], max = 5): string => {
+            const items = list
+              .slice(0, max)
+              .map((i: any) => {
+                const id = String(i?.id || i?.epc || i || '').trim();
+                const name = String(i?.name || i?.title || '').trim();
+                if (!id && !name) return '';
+                return name ? `${id} (${name})` : id;
+              })
+              .filter(Boolean);
+            if (items.length === 0) return '';
+            const more = list.length > max ? ` +${list.length - max} more` : '';
+            return `${items.join(', ')}${more}`;
+          };
+
+          const previewQty = (list: any[], max = 5): string => {
+            const items = list
+              .slice(0, max)
+              .map((i: any) => {
+                const pid = String(i?.productId || '').trim();
+                const nm = String(i?.productName || '').trim();
+                const qty = i?.quantity;
+                const uom = String(i?.uom || '').trim();
+                if (!pid) return '';
+                const left = nm ? `${pid} (${nm})` : pid;
+                const right = qty != null && uom ? `${qty} ${uom}` : qty != null ? String(qty) : '';
+                return right ? `${left}: ${right}` : left;
+              })
+              .filter(Boolean);
+            if (items.length === 0) return '';
+            const more = list.length > max ? ` +${list.length - max} more` : '';
+            return `${items.join(', ')}${more}`;
+          };
+
+          const title = guessEventType(ev);
+          const when = guessEventTime(ev);
+          const processType = String(ev?.processType || ev?.process || '').trim();
+          const action = String(ev?.action || '').trim();
+
+          return (
+            <div key={`dte-preview-${idx}`} className='rounded-lg border p-3 space-y-2'>
+              <div className='flex items-start justify-between gap-3'>
+                <div className='space-y-1'>
+                  <div className='font-medium'>{title}</div>
+                  <div className='text-xs text-muted-foreground'>
+                    {when || 'Event time not provided'}
+                    {location ? ` · location: ${location}` : ''}
+                  </div>
+                </div>
+                <div className='text-xs text-muted-foreground'>#{idx + 1}</div>
+              </div>
+
+              <div className='grid grid-cols-1 md:grid-cols-2 gap-2 text-xs'>
+                {processType && (
+                  <div>
+                    <span className='text-muted-foreground'>Process: </span>
+                    <code>{processType}</code>
+                  </div>
+                )}
+                {action && (
+                  <div>
+                    <span className='text-muted-foreground'>Action: </span>
+                    <code>{action}</code>
+                  </div>
+                )}
+                {outputs.length > 0 && (
+                  <div className='md:col-span-2'>
+                    <span className='text-muted-foreground'>Outputs: </span>
+                    <code>{previewList(outputs)}</code>
+                  </div>
+                )}
+                {inputs.length > 0 && (
+                  <div className='md:col-span-2'>
+                    <span className='text-muted-foreground'>Inputs: </span>
+                    <code>{previewList(inputs)}</code>
+                  </div>
+                )}
+                {qOut.length > 0 && (
+                  <div className='md:col-span-2'>
+                    <span className='text-muted-foreground'>Output quantities: </span>
+                    <code>{previewQty(qOut)}</code>
+                  </div>
+                )}
+                {qIn.length > 0 && (
+                  <div className='md:col-span-2'>
+                    <span className='text-muted-foreground'>Input quantities: </span>
+                    <code>{previewQty(qIn)}</code>
+                  </div>
+                )}
+              </div>
+
+              {evidence.length > 0 && (
+                <div className='flex flex-wrap gap-2 pt-1'>
+                  {evidence.slice(0, 8).map((l, i) => (
+                    <Button asChild key={`dte-evidence-${idx}-${i}`} type='button' size='sm' variant='outline'>
+                      <Link href={l.href} target='_blank' rel='noreferrer'>
+                        {l.label ? String(l.label) : 'Evidence'}
+                      </Link>
+                    </Button>
+                  ))}
+                </div>
+              )}
+
+              <details className='text-xs'>
+                <summary className='cursor-pointer text-muted-foreground'>Technical fields</summary>
+                <pre className='mt-2 whitespace-pre-wrap font-mono text-[11px]'>{JSON.stringify(ev, null, 2)}</pre>
+              </details>
+            </div>
+          );
+        })}
+      </div>
+
+      {events.length > maxEvents && (
+        <div className='text-xs text-muted-foreground'>Showing first {maxEvents} events.</div>
+      )}
+    </div>
+  );
+}
+
 function normalizeDidWebInput(raw: string): string {
   const value = raw.trim();
   if (!value) return '';
@@ -119,6 +297,15 @@ function extractEventsFromJson(value: any): any[] {
   if (Array.isArray(value?.events)) return value.events;
   if (Array.isArray(value?.credentialSubject)) return value.credentialSubject;
   if (Array.isArray(value?.vc?.credentialSubject)) return value.vc.credentialSubject;
+  return [];
+}
+
+function extractEventsFromVc(value: any): any[] {
+  if (!value) return [];
+  const vc = value?.vc && typeof value.vc === 'object' ? value.vc : value;
+  const subject = (vc as any)?.credentialSubject;
+  if (Array.isArray(subject)) return subject;
+  if (subject && typeof subject === 'object') return Object.values(subject as any);
   return [];
 }
 
@@ -209,6 +396,10 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
   const [eventsJsonParsed, setEventsJsonParsed] = useState<any[] | null>(null);
   const [eventsJsonError, setEventsJsonError] = useState<string>('');
 
+  const [customerPreviewTokenId, setCustomerPreviewTokenId] = useState<string>('');
+  const [customerPreviewKey, setCustomerPreviewKey] = useState<string>('');
+  const [customerPreviewDteId, setCustomerPreviewDteId] = useState<string>('');
+
   const walletEvmAddress = useMemo(() => {
     if (!connectedAddress) return '';
     try {
@@ -271,17 +462,22 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
     ...(name ? { name } : {}),
   });
 
-  const mapItems = (rows: ItemRow[]): any[] =>
-    rows
-      .map((r) => ({
-        id: String(r.id || '').trim(),
-        name: String(r.name || '').trim(),
-      }))
-      .filter((r) => r.id)
-      .map((r) => buildItem(r.id, r.name || undefined));
+  const buildItemCb = useCallback((id: string, name?: string) => buildItem(id, name), []);
 
-  const mapQuantities = (rows: QuantityRow[]): any[] =>
-    rows
+  const mapItems = useCallback(
+    (rows: ItemRow[]): any[] =>
+      rows
+        .map((r) => ({
+          id: String(r.id || '').trim(),
+          name: String(r.name || '').trim(),
+        }))
+        .filter((r) => r.id)
+        .map((r) => buildItemCb(r.id, r.name || undefined)),
+    [buildItemCb]
+  );
+
+  const mapQuantities = useCallback((rows: QuantityRow[]): any[] => {
+    return rows
       .map((r) => ({
         productId: String(r.productId || '').trim(),
         productName: String(r.productName || '').trim(),
@@ -295,8 +491,9 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
         quantity: r.quantity,
         uom: r.uom,
       }));
+  }, []);
 
-  const buildEvent = (): any => {
+  const buildEvent = useCallback((): any => {
     const eventId =
       (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function')
         ? `urn:uuid:${(crypto as any).randomUUID()}`
@@ -325,7 +522,7 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
     if (outItems.length) event.outputEPCList = outItems;
     if (inItems.length) event.inputEPCList = inItems;
     if (childItems.length) event.childEPCs = childItems;
-    if (parentId) event.parentEPC = buildItem(parentId, parentName || undefined);
+    if (parentId) event.parentEPC = buildItemCb(parentId, parentName || undefined);
 
     const q = mapQuantities(quantities);
     const inQ = mapQuantities(inputQuantities);
@@ -336,7 +533,7 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
 
     // Link selected DPP into the chosen field (resolver-first indexing will pick it up)
     if (selectedProductId) {
-      const item = buildItem(selectedProductId, selectedProductName || undefined);
+      const item = buildItemCb(selectedProductId, selectedProductName || undefined);
       if (linkMode === 'outputEPCList') {
         event.outputEPCList = Array.isArray(event.outputEPCList) ? [item, ...event.outputEPCList] : [item];
       } else if (linkMode === 'inputEPCList') {
@@ -360,9 +557,7 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
     }
 
     return event;
-  };
-
-  const eventsArray = useMemo(() => [buildEvent()], [
+  }, [
     eventType,
     eventTime,
     eventTimeZoneOffset,
@@ -383,7 +578,12 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
     outputQuantities,
     selectedProductId,
     selectedProductName,
+    mapItems,
+    mapQuantities,
+    buildItemCb,
   ]);
+
+  const eventsArray = useMemo(() => [buildEvent()], [buildEvent]);
 
   const eventsForSubmit = useMemo(() => {
     if (eventsSource === 'json') return Array.isArray(eventsJsonParsed) ? eventsJsonParsed : [];
@@ -464,6 +664,7 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
       const pname = String(dpp?.product?.name || '');
       setSelectedProductId(pid);
       setSelectedProductName(pname);
+      setCustomerPreviewTokenId(String(tokenId || '').trim());
 
       if (pid) {
         // Choose a sensible default link mode based on event type
@@ -586,6 +787,48 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
     } finally {
       setBusy(false);
     }
+  };
+
+  const dtePreviewVc = useMemo(() => {
+    if (verifyResult?.vc) return verifyResult.vc;
+    if (issueResult?.vc) return issueResult.vc;
+    if (validation?.vc) return validation.vc;
+    return null;
+  }, [issueResult?.vc, validation?.vc, verifyResult?.vc]);
+
+  const dtePreviewEvents = useMemo(() => extractEventsFromVc(dtePreviewVc), [dtePreviewVc]);
+
+  const customerPreviewUrl = useMemo(() => {
+    const tokenId = String(customerPreviewTokenId || selectedTokenId || '').trim();
+    if (!tokenId) return '';
+    const base = `/render/${encodeURIComponent(tokenId)}`;
+    const key = String(customerPreviewKey || '').trim();
+    const preview = String(customerPreviewDteId || '').trim();
+    const params = new URLSearchParams();
+    if (key) params.set('key', key);
+    if (preview) params.set('previewDte', preview);
+    const qs = params.toString();
+    return qs ? `${base}?${qs}` : base;
+  }, [customerPreviewDteId, customerPreviewKey, customerPreviewTokenId, selectedTokenId]);
+
+  const createCustomerPreview = async () => {
+    const tokenId = String(customerPreviewTokenId || selectedTokenId || '').trim();
+    if (!tokenId) throw new Error('Token ID is required');
+    if (!Array.isArray(eventsForSubmit) || eventsForSubmit.length === 0) throw new Error('No events to preview');
+
+    const res = await fetch('/api/render/preview-dte', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        tokenId,
+        events: eventsForSubmit,
+        issuerDid,
+      }),
+    });
+    const json = await res.json();
+    if (!json?.success) throw new Error(json?.message || json?.error || 'Failed to create preview');
+    setCustomerPreviewDteId(String(json.previewId || '').trim());
+    toast.success('Customer preview created');
   };
 
   return (
@@ -1297,6 +1540,88 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
                     <Label>Preview (Events JSON to be submitted)</Label>
                     <Textarea value={eventsJsonForSubmitPreview} readOnly className='min-h-[140px] font-mono text-xs' />
                   </div>
+
+                  <div className='md:col-span-2'>
+                    <RenderedDtePreview events={eventsForSubmit} />
+                  </div>
+
+                  <div className='space-y-3 md:col-span-2 border rounded-lg p-4'>
+                    <div className='font-medium'>Customer view preview</div>
+                    <div className='text-xs text-muted-foreground'>
+                      This is the actual customer-facing render for the selected passport. Use “Preview current events” to inject the not-yet-published DTE into the page.
+                    </div>
+
+                    <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
+                      <div className='space-y-2'>
+                        <Label htmlFor='customer-preview-token'>Token ID</Label>
+                        <Input
+                          id='customer-preview-token'
+                          value={customerPreviewTokenId || selectedTokenId}
+                          onChange={(e) => setCustomerPreviewTokenId(e.target.value)}
+                          placeholder='e.g. 5'
+                          disabled={busy}
+                        />
+                      </div>
+                      <div className='space-y-2 md:col-span-2'>
+                        <Label htmlFor='customer-preview-key'>Key (optional)</Label>
+                        <Input
+                          id='customer-preview-key'
+                          value={customerPreviewKey}
+                          onChange={(e) => setCustomerPreviewKey(e.target.value)}
+                          placeholder='verification key (if you want to decrypt restricted sections)'
+                          disabled={busy}
+                        />
+                      </div>
+                    </div>
+
+                    {customerPreviewUrl ? (
+                      <>
+                        <div className='flex flex-wrap gap-2'>
+                          <Button
+                            type='button'
+                            size='sm'
+                            variant='outline'
+                            disabled={busy || !eventsForSubmit.length || !String(customerPreviewTokenId || selectedTokenId || '').trim()}
+                            onClick={() => void createCustomerPreview().catch((e: any) => toast.error(e?.message || 'Failed to create preview'))}
+                          >
+                            Preview current events
+                          </Button>
+                          <Button
+                            type='button'
+                            size='sm'
+                            variant='outline'
+                            disabled={busy || !customerPreviewDteId}
+                            onClick={() => {
+                              setCustomerPreviewDteId('');
+                              toast.success('Preview cleared');
+                            }}
+                          >
+                            Clear preview
+                          </Button>
+                        </div>
+                        <div className='flex items-center justify-between gap-2'>
+                          <div className='text-xs text-muted-foreground truncate'>
+                            URL: <code>{customerPreviewUrl}</code>
+                          </div>
+                          <Button asChild type='button' size='sm' variant='outline' disabled={busy}>
+                            <Link href={customerPreviewUrl} target='_blank' rel='noreferrer'>
+                              Open
+                            </Link>
+                          </Button>
+                        </div>
+                        <div className='rounded-lg border overflow-hidden'>
+                          <iframe
+                            title='Customer view preview'
+                            src={customerPreviewUrl}
+                            className='w-full h-[720px] bg-background'
+                            loading='lazy'
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div className='text-xs text-muted-foreground'>Select a passport (or enter a token id) to preview the customer view.</div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1471,6 +1796,142 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
                       )}
                     </AlertDescription>
                   </Alert>
+                )}
+
+                {dtePreviewEvents.length > 0 && (
+                  <div className='space-y-3 border rounded-lg p-4'>
+                    <div className='font-medium'>Rendered preview (DTE)</div>
+                    <div className='text-xs text-muted-foreground'>
+                      A human-friendly preview of the signed DTE contents (similar to what is shown in the customer view timeline).
+                    </div>
+
+                    <div className='space-y-3'>
+                      {dtePreviewEvents.slice(0, 20).map((ev, idx) => {
+                        const outputs = Array.isArray(ev?.outputEPCList) ? ev.outputEPCList : [];
+                        const inputs = Array.isArray(ev?.inputEPCList) ? ev.inputEPCList : [];
+                        const qIn = Array.isArray(ev?.inputQuantityList) ? ev.inputQuantityList : [];
+                        const qOut = Array.isArray(ev?.outputQuantityList) ? ev.outputQuantityList : [];
+                        const locationRaw =
+                          ev?.bizLocation?.id || ev?.bizLocation || ev?.readPoint?.id || ev?.readPoint || ev?.location || ev?.facility || '';
+                        const location = String(locationRaw || '').trim();
+                        const evidence = extractEvidenceLinks(ev);
+
+                        const previewList = (list: any[], max = 5): string => {
+                          const items = list
+                            .slice(0, max)
+                            .map((i: any) => {
+                              const id = String(i?.id || i?.epc || i || '').trim();
+                              const name = String(i?.name || i?.title || '').trim();
+                              if (!id && !name) return '';
+                              return name ? `${id} (${name})` : id;
+                            })
+                            .filter(Boolean);
+                          if (items.length === 0) return '';
+                          const more = list.length > max ? ` +${list.length - max} more` : '';
+                          return `${items.join(', ')}${more}`;
+                        };
+
+                        const previewQty = (list: any[], max = 5): string => {
+                          const items = list
+                            .slice(0, max)
+                            .map((i: any) => {
+                              const pid = String(i?.productId || '').trim();
+                              const nm = String(i?.productName || '').trim();
+                              const qty = i?.quantity;
+                              const uom = String(i?.uom || '').trim();
+                              if (!pid) return '';
+                              const left = nm ? `${pid} (${nm})` : pid;
+                              const right = qty != null && uom ? `${qty} ${uom}` : qty != null ? String(qty) : '';
+                              return right ? `${left}: ${right}` : left;
+                            })
+                            .filter(Boolean);
+                          if (items.length === 0) return '';
+                          const more = list.length > max ? ` +${list.length - max} more` : '';
+                          return `${items.join(', ')}${more}`;
+                        };
+
+                        const title = guessEventType(ev);
+                        const when = guessEventTime(ev);
+                        const processType = String(ev?.processType || ev?.process || '').trim();
+                        const action = String(ev?.action || '').trim();
+
+                        return (
+                          <div key={`dte-preview-${idx}`} className='rounded-lg border p-3 space-y-2'>
+                            <div className='flex items-start justify-between gap-3'>
+                              <div className='space-y-1'>
+                                <div className='font-medium'>{title}</div>
+                                <div className='text-xs text-muted-foreground'>
+                                  {when || 'Event time not provided'}
+                                  {location ? ` · location: ${location}` : ''}
+                                </div>
+                              </div>
+                              <div className='text-xs text-muted-foreground'>#{idx + 1}</div>
+                            </div>
+
+                            <div className='grid grid-cols-1 md:grid-cols-2 gap-2 text-xs'>
+                              {processType && (
+                                <div>
+                                  <span className='text-muted-foreground'>Process: </span>
+                                  <code>{processType}</code>
+                                </div>
+                              )}
+                              {action && (
+                                <div>
+                                  <span className='text-muted-foreground'>Action: </span>
+                                  <code>{action}</code>
+                                </div>
+                              )}
+                              {outputs.length > 0 && (
+                                <div className='md:col-span-2'>
+                                  <span className='text-muted-foreground'>Outputs: </span>
+                                  <code>{previewList(outputs)}</code>
+                                </div>
+                              )}
+                              {inputs.length > 0 && (
+                                <div className='md:col-span-2'>
+                                  <span className='text-muted-foreground'>Inputs: </span>
+                                  <code>{previewList(inputs)}</code>
+                                </div>
+                              )}
+                              {qOut.length > 0 && (
+                                <div className='md:col-span-2'>
+                                  <span className='text-muted-foreground'>Output quantities: </span>
+                                  <code>{previewQty(qOut)}</code>
+                                </div>
+                              )}
+                              {qIn.length > 0 && (
+                                <div className='md:col-span-2'>
+                                  <span className='text-muted-foreground'>Input quantities: </span>
+                                  <code>{previewQty(qIn)}</code>
+                                </div>
+                              )}
+                            </div>
+
+                            {evidence.length > 0 && (
+                              <div className='flex flex-wrap gap-2 pt-1'>
+                                {evidence.slice(0, 8).map((l, i) => (
+                                  <Button asChild key={`dte-evidence-${idx}-${i}`} type='button' size='sm' variant='outline'>
+                                    <Link href={l.href} target='_blank' rel='noreferrer'>
+                                      {l.label ? String(l.label) : 'Evidence'}
+                                    </Link>
+                                  </Button>
+                                ))}
+                              </div>
+                            )}
+
+                            <details className='text-xs'>
+                              <summary className='cursor-pointer text-muted-foreground'>Technical fields</summary>
+                              <pre className='mt-2 whitespace-pre-wrap font-mono text-[11px]'>{JSON.stringify(ev, null, 2)}</pre>
+                            </details>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {dtePreviewEvents.length > 20 && (
+                      <div className='text-xs text-muted-foreground'>Showing first 20 events.</div>
+                    )}
+                  </div>
                 )}
               </div>
             )}
