@@ -26,6 +26,14 @@ export function deriveLookupAliases(productId: string): string[] {
 
   const out = new Set<string>([v]);
 
+  const tryDecode = (s: string): string => {
+    try {
+      return decodeURIComponent(s);
+    } catch {
+      return s;
+    }
+  };
+
   // Heuristic: derive GTIN:<digits> from GS1 Digital Link URLs like https://id.gs1.org/01/<gtin>/...
   const m = v.match(/\/01\/(\d{8,14})(?:\/|$)/);
   if (m?.[1]) {
@@ -34,7 +42,12 @@ export function deriveLookupAliases(productId: string): string[] {
 
   // Heuristic: derive SKU:<...> from urn:product:SKU-... etc (no-op but keeps consistent)
   if (v.startsWith('urn:product:')) {
-    out.add(v.replace(/^urn:product:/, ''));
+    const restRaw = v.replace(/^urn:product:/, '');
+    const rest = tryDecode(restRaw);
+    out.add(rest);
+    // If the URN uses a fragment (`urn:product:SKU#LOT`), also add SKU.
+    const base = rest.split('#')[0];
+    if (base) out.add(base);
   }
 
   // If already GTIN:<digits>, also add bare digits

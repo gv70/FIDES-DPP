@@ -109,6 +109,7 @@ export function PassportTransferModal({ open, onOpenChange, tokenId: initialToke
     let capturedTxHash: string | undefined;
 
     try {
+      const DRY_RUN_GAS_LIMIT = { refTime: 30_000_000_000n, proofSize: 2_000_000n };
       const tokenIdBigInt = BigInt(tokenId);
       const destination = toH160(toAddress);
       const callerH160 = toH160(connectedAccount.address);
@@ -116,6 +117,9 @@ export function PassportTransferModal({ open, onOpenChange, tokenId: initialToke
       try {
         const ownerResult = await (contract as any).query.ownerOf(tokenIdBigInt, {
           caller: connectedAccount.address,
+          value: 0n,
+          gasLimit: DRY_RUN_GAS_LIMIT,
+          storageDepositLimit: undefined,
         });
         const owner = ownerResult?.output ? String(ownerResult.output) : null;
         if (owner && owner.toLowerCase() !== callerH160.toLowerCase()) {
@@ -125,7 +129,19 @@ export function PassportTransferModal({ open, onOpenChange, tokenId: initialToke
         throw new Error(ownerCheckError?.message || 'Ownership check failed');
       }
 
-      const tx = (contract as any).tx.transfer(destination, tokenIdBigInt, {});
+      const dryRun = await (contract as any).query.transfer(destination, tokenIdBigInt, {
+        caller: connectedAccount.address,
+        value: 0n,
+        gasLimit: DRY_RUN_GAS_LIMIT,
+        storageDepositLimit: undefined,
+      });
+
+      const gasLimit = dryRun?.raw?.gasRequired || DRY_RUN_GAS_LIMIT;
+      const estimatedDeposit: bigint | undefined = dryRun?.raw?.storageDeposit?.value;
+      const storageDepositLimit =
+        estimatedDeposit != null && estimatedDeposit > 0n ? estimatedDeposit + estimatedDeposit / 5n + 1_000_000_000n : 10_000_000_000n;
+
+      const tx = (contract as any).tx.transfer(destination, tokenIdBigInt, { value: 0n, gasLimit, storageDepositLimit });
 
       await tx
         .signAndSend(connectedAccount.address, (progress: any) => {

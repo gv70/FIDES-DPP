@@ -462,24 +462,36 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
     ...(name ? { name } : {}),
   });
 
+  const normalizeIdToUri = useCallback((raw: string): string => {
+    const v = String(raw || '').trim();
+    if (!v) return '';
+    // If it already looks like a URI scheme, keep it.
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(v)) return v;
+    // Preserve "code#lot" semantics using a URN fragment, but encode unsafe characters.
+    const [baseRaw, fragRaw] = v.split('#', 2);
+    const base = encodeURIComponent(String(baseRaw || '').trim());
+    const frag = fragRaw != null ? encodeURIComponent(String(fragRaw || '').trim()) : '';
+    return frag ? `urn:product:${base}#${frag}` : `urn:product:${base}`;
+  }, []);
+
   const buildItemCb = useCallback((id: string, name?: string) => buildItem(id, name), []);
 
   const mapItems = useCallback(
     (rows: ItemRow[]): any[] =>
       rows
         .map((r) => ({
-          id: String(r.id || '').trim(),
+          id: normalizeIdToUri(String(r.id || '').trim()),
           name: String(r.name || '').trim(),
         }))
         .filter((r) => r.id)
         .map((r) => buildItemCb(r.id, r.name || undefined)),
-    [buildItemCb]
+    [buildItemCb, normalizeIdToUri]
   );
 
   const mapQuantities = useCallback((rows: QuantityRow[]): any[] => {
     return rows
       .map((r) => ({
-        productId: String(r.productId || '').trim(),
+        productId: normalizeIdToUri(String(r.productId || '').trim()),
         productName: String(r.productName || '').trim(),
         quantity: Number(String(r.quantity || '').trim()),
         uom: String(r.uom || '').trim(),
@@ -491,7 +503,7 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
         quantity: r.quantity,
         uom: r.uom,
       }));
-  }, []);
+  }, [normalizeIdToUri]);
 
   const buildEvent = useCallback((): any => {
     const eventId =
@@ -511,6 +523,11 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
       ...(bizStep.trim() ? { bizStep: bizStep.trim() } : {}),
       ...(bizLocation.trim() ? { bizLocation: bizLocation.trim() } : {}),
     };
+
+    // UNTP DTE schema requires a source party. Use the issuer DID as a reasonable default.
+    if (issuerDid) {
+      event.sourceParty = [{ id: issuerDid, type: ['Party'] }];
+    }
 
     // Standard UNTP property names (as in examples)
     const outItems = mapItems(outputs);
@@ -533,7 +550,8 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
 
     // Link selected DPP into the chosen field (resolver-first indexing will pick it up)
     if (selectedProductId) {
-      const item = buildItemCb(selectedProductId, selectedProductName || undefined);
+      const normalizedSelectedProductId = normalizeIdToUri(selectedProductId);
+      const item = buildItemCb(normalizedSelectedProductId, selectedProductName || undefined);
       if (linkMode === 'outputEPCList') {
         event.outputEPCList = Array.isArray(event.outputEPCList) ? [item, ...event.outputEPCList] : [item];
       } else if (linkMode === 'inputEPCList') {
@@ -547,7 +565,7 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
         const quantity = Number.isFinite(q) && q > 0 ? q : 1;
         event.quantityList = [
           {
-            productId: selectedProductId,
+            productId: normalizedSelectedProductId,
             ...(selectedProductName ? { productName: selectedProductName } : {}),
             quantity,
             uom: linkUom.trim() || 'EA',
@@ -566,6 +584,7 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
     disposition,
     bizStep,
     bizLocation,
+    issuerDid,
     linkMode,
     linkQuantity,
     linkUom,
@@ -581,14 +600,68 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
     mapItems,
     mapQuantities,
     buildItemCb,
+    normalizeIdToUri,
   ]);
 
   const eventsArray = useMemo(() => [buildEvent()], [buildEvent]);
 
   const eventsForSubmit = useMemo(() => {
-    if (eventsSource === 'json') return Array.isArray(eventsJsonParsed) ? eventsJsonParsed : [];
+    if (eventsSource === 'json') {
+      const input = Array.isArray(eventsJsonParsed) ? eventsJsonParsed : [];
+      return input.map((ev: any) => {
+        const e: any = ev && typeof ev === 'object' ? { ...ev } : ev;
+        if (!e || typeof e !== 'object') return e;
+
+        const normalizeItemList = (list: any) => {
+          if (!Array.isArray(list)) return list;
+          return list
+            .map((it) => {
+              if (typeof it === 'string') return { type: ['Item'], id: normalizeIdToUri(it) };
+              const idRaw = it?.id != null ? String(it.id) : '';
+              const next: any = { ...(it || {}) };
+              if (idRaw) next.id = normalizeIdToUri(idRaw);
+              if (!next.type) next.type = ['Item'];
+              return next;
+            })
+            .filter(Boolean);
+        };
+
+        const normalizeQuantityList = (list: any) => {
+          if (!Array.isArray(list)) return list;
+          return list
+            .map((q) => {
+              if (!q || typeof q !== 'object') return q;
+              const pidRaw = q.productId != null ? String(q.productId) : '';
+              return {
+                ...q,
+                ...(pidRaw ? { productId: normalizeIdToUri(pidRaw) } : {}),
+              };
+            })
+            .filter(Boolean);
+        };
+
+        e.outputEPCList = normalizeItemList(e.outputEPCList);
+        e.inputEPCList = normalizeItemList(e.inputEPCList);
+        e.epcList = normalizeItemList(e.epcList);
+        e.childEPCList = normalizeItemList(e.childEPCList);
+        e.childEPCs = normalizeItemList(e.childEPCs);
+        if (e.parentEPC && typeof e.parentEPC === 'object' && e.parentEPC.id) {
+          e.parentEPC = { ...e.parentEPC, id: normalizeIdToUri(String(e.parentEPC.id)) };
+        }
+
+        e.quantityList = normalizeQuantityList(e.quantityList);
+        e.inputQuantityList = normalizeQuantityList(e.inputQuantityList);
+        e.outputQuantityList = normalizeQuantityList(e.outputQuantityList);
+
+        if (!e.sourceParty && issuerDid) {
+          e.sourceParty = [{ id: issuerDid, type: ['Party'] }];
+        }
+
+        return e;
+      });
+    }
     return eventsArray;
-  }, [eventsArray, eventsJsonParsed, eventsSource]);
+  }, [eventsArray, eventsJsonParsed, eventsSource, issuerDid, normalizeIdToUri]);
 
   const eventsJsonForSubmitPreview = useMemo(() => JSON.stringify(eventsForSubmit, null, 2), [eventsForSubmit]);
 

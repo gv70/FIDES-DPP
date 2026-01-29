@@ -524,13 +524,33 @@ export function PassportUpdateModal({
           ? normalizeHex(prepared.updateData.subjectIdHash, 'subjectIdHash')
           : undefined;
 
+      const DRY_RUN_GAS_LIMIT = { refTime: 30_000_000_000n, proofSize: 2_000_000n };
+      const dryRun = await (contract as any).query.updateDataset(
+        BigInt(tokenId),
+        prepared.updateData.datasetUri,
+        payloadHashHex,
+        prepared.updateData.datasetType,
+        subjectIdHashHex,
+        {
+          caller: connectedAccount.address,
+          value: 0n,
+          gasLimit: DRY_RUN_GAS_LIMIT,
+          storageDepositLimit: undefined,
+        }
+      );
+
+      const gasLimit = dryRun?.raw?.gasRequired || DRY_RUN_GAS_LIMIT;
+      const estimatedDeposit: bigint | undefined = dryRun?.raw?.storageDeposit?.value;
+      const storageDepositLimit =
+        estimatedDeposit != null && estimatedDeposit > 0n ? estimatedDeposit + estimatedDeposit / 5n + 1_000_000_000n : 10_000_000_000n;
+
       const tx = (contract as any).tx.updateDataset(
         BigInt(tokenId),
         prepared.updateData.datasetUri,
         payloadHashHex,
         prepared.updateData.datasetType,
         subjectIdHashHex,
-        {},
+        { value: 0n, gasLimit, storageDepositLimit },
       );
 
       await tx

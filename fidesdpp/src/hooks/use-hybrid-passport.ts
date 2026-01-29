@@ -486,8 +486,13 @@ export function useHybridPassport(): UseHybridPassportReturn {
 
       let tx: any;
       try {
-        // Call registerPassport directly (same pattern as dpp-contract-test.tsx)
-        // dedot expects FixedBytes<32> as hex strings "0x..."
+        // IMPORTANT (revive/contracts):
+        // Dedot validates parameter types when building `client.tx.revive.call(...)`.
+        // If `gasLimit` is undefined, it throws before the built-in dry-run hook can run.
+        // So we explicitly dry-run via `contract.query.*` first, then submit a tx with
+        // concrete `gasLimit` + `storageDepositLimit`.
+        const DRY_RUN_GAS_LIMIT = { refTime: 30_000_000_000n, proofSize: 2_000_000n };
+
         console.log('[useHybridPassport] Calling registerPassport with:', {
           datasetUri: registrationData.datasetUri,
           payloadHash: payloadHashHex,
@@ -495,14 +500,39 @@ export function useHybridPassport(): UseHybridPassportReturn {
           granularity,
           subjectIdHash: subjectIdHashHex,
         });
-        
+
+        const dryRun = await (contract as any).query.registerPassport(
+          registrationData.datasetUri,
+          payloadHashHex,
+          registrationData.datasetType,
+          granularity,
+          subjectIdHashHex,
+          {
+            caller: connectedAccount.address,
+            value: 0n,
+            gasLimit: DRY_RUN_GAS_LIMIT,
+            // IMPORTANT: do NOT cap deposit during dry-run, otherwise the estimate can be wrong.
+            storageDepositLimit: undefined,
+          }
+        );
+
+        const gasLimit = dryRun?.raw?.gasRequired || DRY_RUN_GAS_LIMIT;
+        const estimatedDeposit: bigint | undefined = dryRun?.raw?.storageDeposit?.value;
+        // Add headroom to avoid `StorageDepositLimitExhausted` if the state changes between simulation and inclusion.
+        const storageDepositLimit =
+          estimatedDeposit != null && estimatedDeposit > 0n ? estimatedDeposit + estimatedDeposit / 5n + 1_000_000_000n : 10_000_000_000n;
+
         tx = (contract as any).tx.registerPassport(
           registrationData.datasetUri,
           payloadHashHex, // FixedBytes<32> - hex string "0x..." (dedot will convert internally)
           registrationData.datasetType,
           granularity,
           subjectIdHashHex, // FixedBytes<32> | undefined - hex string "0x..." or undefined
-          {}, // Options (last parameter) - empty object for auto-estimate
+          {
+            value: 0n,
+            gasLimit,
+            storageDepositLimit,
+          }
         );
         
         console.log('[useHybridPassport] Transaction created successfully:', {
