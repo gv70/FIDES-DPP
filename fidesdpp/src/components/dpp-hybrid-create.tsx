@@ -18,6 +18,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, CheckCircle, XCircle, Info, Upload, FileText, Sparkles } from 'lucide-react';
 import { useHybridPassport } from '@/hooks/use-hybrid-passport';
 import type { Granularity } from '@/lib/chain/ChainAdapter';
+import type { CreatePassportFormInput } from '@/lib/application/hybrid-types';
 import { testProducts, loadProductFromJson, exportProductToJson, type TestProduct } from '@/data/test-products';
 import { useTypink } from 'typink';
 import { appendTxLog } from '@/lib/tx/tx-log';
@@ -47,9 +48,12 @@ export function DppHybridCreate({
   const { pilotId } = usePilotContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const complianceDocsInputRef = useRef<HTMLInputElement>(null);
+  const userInfoDocsInputRef = useRef<HTMLInputElement>(null);
   const [inputMode, setInputMode] = useState<'template' | 'upload' | 'manual'>('template');
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [uploadError, setUploadError] = useState<string>('');
+  const [uploadedJsonPreview, setUploadedJsonPreview] = useState<any>(null);
 
   type UploadedImage = {
     cid: string;
@@ -63,8 +67,227 @@ export function DppHybridCreate({
     kind?: 'primary' | 'gallery';
   };
 
+  type UploadedDocument = {
+    cid: string;
+    uri: string; // ipfs://<cid>
+    url: string; // gateway URL
+    hash: string;
+    size: number;
+    contentType?: string;
+    name?: string;
+    title?: string;
+    kind: 'compliance' | 'user-info';
+    docType: 'declaration-of-conformity' | 'technical-documentation' | 'conformity-certificate' | 'other' | 'manual' | 'instructions' | 'warnings' | 'safety';
+    language?: string;
+  };
+
+  type ComplianceDocType = NonNullable<
+    NonNullable<CreatePassportFormInput['annexIII']>['complianceDocs']
+  >[number]['type'];
+  type UserInformationType = NonNullable<
+    NonNullable<CreatePassportFormInput['annexIII']>['userInformation']
+  >[number]['type'];
+
   const [productImages, setProductImages] = useState<UploadedImage[]>([]);
   const [imageUploadBusy, setImageUploadBusy] = useState(false);
+  const [docUploadBusy, setDocUploadBusy] = useState(false);
+  const [complianceDocs, setComplianceDocs] = useState<UploadedDocument[]>([]);
+  const [userInfoDocs, setUserInfoDocs] = useState<UploadedDocument[]>([]);
+
+  const downloadJson = (data: unknown, filename: string) => {
+    const jsonString = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const parseUrls = (text: string): string[] =>
+    String(text || '')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+  const fileTitleFromName = (filename?: string): string => {
+    const base = String(filename || '').trim();
+    if (!base) return '';
+    return base.replace(/\.[a-z0-9]+$/i, '');
+  };
+
+  const toComplianceDocType = (docType: UploadedDocument['docType']): ComplianceDocType => {
+    if (docType === 'declaration-of-conformity') return 'declaration-of-conformity';
+    if (docType === 'technical-documentation') return 'technical-documentation';
+    if (docType === 'conformity-certificate') return 'conformity-certificate';
+    return 'other';
+  };
+
+  const toUserInformationType = (docType: UploadedDocument['docType']): UserInformationType => {
+    if (docType === 'instructions') return 'instructions';
+    if (docType === 'warnings') return 'warnings';
+    if (docType === 'safety') return 'safety';
+    return 'manual';
+  };
+
+  const uploadDocumentsToIpfs = async (
+    files: FileList | null,
+    kind: UploadedDocument['kind'],
+    defaults: Pick<UploadedDocument, 'docType' | 'language'>
+  ) => {
+    if (!files || files.length === 0) return;
+    setDocUploadBusy(true);
+    try {
+      const uploaded: UploadedDocument[] = [];
+      for (const file of Array.from(files)) {
+        const fd = new FormData();
+        fd.set('file', file, file.name);
+        const res = await fetch('/api/ipfs/upload', { method: 'POST', body: fd });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.cid || !json?.url) {
+          throw new Error(json?.error || 'Failed to upload document');
+        }
+
+        const cid = String(json.cid);
+        const name = String(json.name || file.name || '');
+        uploaded.push({
+          cid,
+          uri: `ipfs://${cid}`,
+          url: String(json.url),
+          hash: String(json.hash || ''),
+          size: Number(json.size || 0),
+          contentType: String(json.contentType || file.type || ''),
+          name,
+          title: fileTitleFromName(name),
+          kind,
+          docType: defaults.docType,
+          language: defaults.language || undefined,
+        });
+      }
+
+      if (kind === 'compliance') {
+        setComplianceDocs((prev) => [...prev, ...uploaded]);
+      } else {
+        setUserInfoDocs((prev) => [...prev, ...uploaded]);
+      }
+
+      toast.success(`Uploaded ${uploaded.length} document(s)`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to upload documents');
+    } finally {
+      setDocUploadBusy(false);
+    }
+  };
+
+  const inferGranularityFromUntp = (
+    granularityLevel: unknown,
+    batchNumber?: string,
+    serialNumber?: string
+  ): Granularity => {
+    const g = String(granularityLevel || '').trim().toLowerCase();
+    if (g === 'item') return 'Item';
+    if (g === 'batch') return 'Batch';
+    if (g === 'model' || g === 'productclass') return 'ProductClass';
+    if (serialNumber) return 'Item';
+    if (batchNumber) return 'Batch';
+    return 'Batch';
+  };
+
+  const unwrapUntpDppFromJson = (raw: any): { dpp: any; issuerDid: string } | null => {
+    if (!raw || typeof raw !== 'object') return null;
+    const vc = raw?.vc && typeof raw.vc === 'object' ? raw.vc : raw;
+    const issuerDid = String(vc?.issuer?.id || vc?.issuer || raw?.iss || raw?.issuer?.id || raw?.issuer || '').trim();
+    const subject = vc?.credentialSubject ?? raw?.credentialSubject ?? raw?.vc?.credentialSubject ?? null;
+    if (!subject) return null;
+    const dpp = subject && typeof subject === 'object' && subject['@type'] === 'DigitalProductPassport' ? subject : null;
+    if (!dpp) return null;
+    return { dpp, issuerDid };
+  };
+
+  const mapUntpDppToFormData = (dpp: any) => {
+    const product = dpp?.product || {};
+    const manufacturer = dpp?.manufacturer || {};
+    const facilityObj =
+      manufacturer?.facility && typeof manufacturer.facility === 'object' ? manufacturer.facility : null;
+    const facilityName = facilityObj ? String(facilityObj?.name || '') : String(manufacturer?.facility || '');
+    const facilityId = facilityObj ? String(facilityObj?.identifier || '') : '';
+
+    const batchNumber = String(product?.batchNumber || '').trim();
+    const serialNumber = String(product?.serialNumber || '').trim();
+    const granularity = inferGranularityFromUntp(dpp?.granularityLevel, batchNumber, serialNumber);
+
+    const annexRaw = dpp?.annexIII?.public || dpp?.annexIII || null;
+    const annex = annexRaw && typeof annexRaw === 'object' ? annexRaw : null;
+
+    const complianceDocs = Array.isArray(annex?.complianceDocs) ? annex.complianceDocs : [];
+    const userInfo = Array.isArray(annex?.userInformation) ? annex.userInformation : [];
+    const importer = annex?.importer || {};
+    const responsible = annex?.responsibleEconomicOperator || {};
+    const facilities = Array.isArray(annex?.facilities) ? annex.facilities : [];
+    const firstFacility = facilities[0] || {};
+
+    const complianceDocUrls = complianceDocs
+      .map((d: any) => String(d?.url || d?.href || '').trim())
+      .filter(Boolean)
+      .join('\n');
+    const userInfoUrls = userInfo
+      .map((d: any) => String(d?.url || d?.href || '').trim())
+      .filter(Boolean)
+      .join('\n');
+
+    const images = Array.isArray(annex?.productImages) ? annex.productImages : [];
+    const parsedImages: UploadedImage[] = images
+      .map((img: any, idx: number): UploadedImage => {
+        const cid = String(
+          img?.cid || (typeof img?.uri === 'string' ? String(img.uri).replace(/^ipfs:\/\//, '') : '')
+        ).trim();
+        const url = String(img?.url || (cid ? getIPFSGatewayURL(cid) : '')).trim();
+        return {
+          cid,
+          uri: String(img?.uri || (cid ? `ipfs://${cid}` : '')),
+          url,
+          hash: String(img?.hash || ''),
+          size: Number(img?.size || 0),
+          contentType: String(img?.contentType || ''),
+          name: String(img?.name || ''),
+          alt: String(img?.alt || ''),
+          kind: img?.kind === 'primary' || idx === 0 ? 'primary' : 'gallery',
+        };
+      })
+      .filter((i: UploadedImage) => i.cid && i.url);
+
+    return {
+      formDataPatch: {
+        productId: String(product?.identifier || '').trim(),
+        productName: String(product?.name || '').trim(),
+        productDescription: String(product?.description || '').trim(),
+        granularity,
+        batchNumber,
+        serialNumber,
+        manufacturerName: String(manufacturer?.name || '').trim(),
+        manufacturerIdentifier: String(manufacturer?.identifier || '').trim(),
+        manufacturerCountry: String(manufacturer?.addressCountry || manufacturer?.country || '').trim(),
+        manufacturerFacility: facilityName.trim(),
+        manufacturerFacilityId: String(facilityId || firstFacility?.facilityId || '').trim(),
+        facilityCountry: String(firstFacility?.country || '').trim(),
+        facilityCity: String(firstFacility?.city || '').trim(),
+        facilityAddress: String(firstFacility?.address || '').trim(),
+        annexGtin: String(annex?.gtin || '').trim(),
+        annexTaricCode: String(annex?.taricCode || '').trim(),
+        annexImporterEori: String(importer?.eori || '').trim(),
+        annexImporterName: String(importer?.name || '').trim(),
+        annexImporterCountry: String(importer?.addressCountry || '').trim(),
+        annexResponsibleName: String(responsible?.name || '').trim(),
+        annexResponsibleOperatorId: String(responsible?.operatorId || '').trim(),
+        annexComplianceDocUrls: complianceDocUrls,
+        annexUserInfoUrls: userInfoUrls,
+      },
+      productImages: parsedImages,
+    };
+  };
 
   useEffect(() => {
     if (phase !== 'complete') return;
@@ -107,6 +330,10 @@ export function DppHybridCreate({
     manufacturerIdentifier: '',
     manufacturerCountry: '',
     manufacturerFacility: '',
+    manufacturerFacilityId: '',
+    facilityCountry: '',
+    facilityCity: '',
+    facilityAddress: '',
     // Optional extended fields (off-chain)
     overrideUniqueProductId: false,
     uniqueProductIdOverride: '',
@@ -212,6 +439,7 @@ export function DppHybridCreate({
     const template = testProducts.find((p) => p.id === templateId);
     if (template && connectedAccount) {
       const annex = (template.data as any).annexIII || {};
+      const firstFacility = Array.isArray(annex.facilities) ? annex.facilities[0] || {} : {};
       const uniqueProductIdFromJson = annex.uniqueProductId || '';
       const shouldOverrideUniqueProductId =
         !!uniqueProductIdFromJson && uniqueProductIdFromJson !== template.data.productId;
@@ -226,6 +454,10 @@ export function DppHybridCreate({
         manufacturerIdentifier: template.data.manufacturer.identifier || '',
         manufacturerCountry: template.data.manufacturer.country || '',
         manufacturerFacility: template.data.manufacturer.facility || '',
+        manufacturerFacilityId: String((template.data.manufacturer as any).facilityId || firstFacility?.facilityId || ''),
+        facilityCountry: String(firstFacility?.country || template.data.manufacturer.country || ''),
+        facilityCity: String(firstFacility?.city || ''),
+        facilityAddress: String(firstFacility?.address || ''),
         overrideUniqueProductId: shouldOverrideUniqueProductId,
         uniqueProductIdOverride: shouldOverrideUniqueProductId ? uniqueProductIdFromJson : '',
         annexGtin: annex.gtin || '',
@@ -295,15 +527,40 @@ export function DppHybridCreate({
     reader.onload = (e) => {
       try {
         const jsonString = e.target?.result as string;
+        const rawParsed = JSON.parse(jsonString);
+        setUploadedJsonPreview(rawParsed);
+
         const productData = loadProductFromJson(jsonString);
         
         if (!productData) {
-          setUploadError('Invalid product data. Required fields: productId, productName, granularity, manufacturer.name, manufacturer.identifier');
+          const untp = unwrapUntpDppFromJson(rawParsed);
+          if (!untp?.dpp) {
+            setUploadError(
+              'Unrecognized JSON format. Upload either: (1) the app create-input JSON (productId/productName/granularity/manufacturer...), or (2) a UNTP DPP VC JSON-LD (credentialSubject.@type="DigitalProductPassport").'
+            );
+            return;
+          }
+
+          if (!connectedAccount) return;
+          const mapped = mapUntpDppToFormData(untp.dpp);
+          setFormData((prev) => ({
+            ...prev,
+            ...mapped.formDataPatch,
+            useDidWeb: true,
+            issuerDid:
+              lockIssuerDid && initialIssuerDid
+                ? normalizeDidWebInput(initialIssuerDid)
+                : normalizeDidWebInput(String(untp.issuerDid || prev.issuerDid || '')),
+          }));
+          setProductImages(mapped.productImages);
+          setUploadError('');
+          setInputMode('manual');
           return;
         }
 
         if (connectedAccount) {
           const annex = (productData as any).annexIII || {};
+          const firstFacility = Array.isArray(annex.facilities) ? annex.facilities[0] || {} : {};
           const uniqueProductIdFromJson = annex.uniqueProductId || '';
           const shouldOverrideUniqueProductId =
             !!uniqueProductIdFromJson && uniqueProductIdFromJson !== productData.productId;
@@ -318,6 +575,10 @@ export function DppHybridCreate({
             manufacturerIdentifier: productData.manufacturer.identifier || '',
             manufacturerCountry: productData.manufacturer.country || '',
             manufacturerFacility: productData.manufacturer.facility || '',
+            manufacturerFacilityId: String((productData.manufacturer as any)?.facilityId || firstFacility?.facilityId || ''),
+            facilityCountry: String(firstFacility?.country || productData.manufacturer.country || ''),
+            facilityCity: String(firstFacility?.city || ''),
+            facilityAddress: String(firstFacility?.address || ''),
             overrideUniqueProductId: shouldOverrideUniqueProductId,
             uniqueProductIdOverride: shouldOverrideUniqueProductId ? uniqueProductIdFromJson : '',
             annexGtin: annex.gtin || '',
@@ -381,15 +642,22 @@ export function DppHybridCreate({
 
   // Export current form data as JSON
   const handleExportJson = () => {
-    const parseUrls = (text: string): string[] =>
-      text
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean);
-
     const complianceDocUrls = parseUrls(formData.annexComplianceDocUrls);
     const userInfoUrls = parseUrls(formData.annexUserInfoUrls);
     const imagesForAnnex = normalizeProductImagesForAnnex(productImages);
+    const complianceDocsFromUploads = complianceDocs.map((d) => ({
+      type: toComplianceDocType(d.docType),
+      title: d.title || d.name || undefined,
+      url: d.url,
+      sha256: d.hash || undefined,
+    }));
+    const userInfoFromUploads = userInfoDocs.map((d) => ({
+      type: toUserInformationType(d.docType),
+      title: d.title || d.name || undefined,
+      language: d.language || undefined,
+      url: d.url,
+      sha256: d.hash || undefined,
+    }));
     const hasAnnex =
       !!formData.annexGtin ||
       !!formData.annexTaricCode ||
@@ -398,6 +666,12 @@ export function DppHybridCreate({
       !!formData.annexImporterCountry ||
       !!formData.annexResponsibleName ||
       !!formData.annexResponsibleOperatorId ||
+      !!formData.manufacturerFacilityId ||
+      !!formData.facilityCountry ||
+      !!formData.facilityCity ||
+      !!formData.facilityAddress ||
+      complianceDocsFromUploads.length > 0 ||
+      userInfoFromUploads.length > 0 ||
       complianceDocUrls.length > 0 ||
       userInfoUrls.length > 0 ||
       imagesForAnnex.length > 0;
@@ -414,6 +688,7 @@ export function DppHybridCreate({
         identifier: formData.manufacturerIdentifier,
         country: formData.manufacturerCountry,
         facility: formData.manufacturerFacility,
+        facilityId: formData.manufacturerFacilityId || undefined,
       },
       ...(hasAnnex && {
         annexIII: {
@@ -423,11 +698,29 @@ export function DppHybridCreate({
             }),
           gtin: formData.annexGtin || undefined,
           taricCode: formData.annexTaricCode || undefined,
-          ...(complianceDocUrls.length > 0 && {
-            complianceDocs: complianceDocUrls.map((url) => ({ type: 'other', url })),
+          facilities:
+            formData.manufacturerFacilityId || formData.facilityCountry || formData.facilityCity || formData.facilityAddress
+              ? [
+                  {
+                    facilityId: formData.manufacturerFacilityId || 'unknown',
+                    name: formData.manufacturerFacility || undefined,
+                    country: formData.facilityCountry || undefined,
+                    city: formData.facilityCity || undefined,
+                    address: formData.facilityAddress || undefined,
+                  },
+                ]
+              : undefined,
+          ...((complianceDocUrls.length > 0 || complianceDocsFromUploads.length > 0) && {
+            complianceDocs: [
+              ...complianceDocsFromUploads,
+              ...complianceDocUrls.map((url) => ({ type: 'other' as const, url })),
+            ],
           }),
-          ...(userInfoUrls.length > 0 && {
-            userInformation: userInfoUrls.map((url) => ({ type: 'manual', url })),
+          ...((userInfoUrls.length > 0 || userInfoFromUploads.length > 0) && {
+            userInformation: [
+              ...userInfoFromUploads,
+              ...userInfoUrls.map((url) => ({ type: 'manual' as const, url })),
+            ],
           }),
           ...(imagesForAnnex.length > 0 && {
             productImages: imagesForAnnex,
@@ -453,30 +746,65 @@ export function DppHybridCreate({
       issuerDid: formData.issuerDid,
     };
     
-    const jsonString = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `product-${formData.productId.replace(/[^a-zA-Z0-9]/g, '-')}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadJson(exportData, `dpp-input-${formData.productId.replace(/[^a-zA-Z0-9]/g, '-')}.json`);
+  };
+
+  const handleExportUntpCredentialSubject = () => {
+    const subject = preparedData?.vcSignablePayload?.payload?.vc?.credentialSubject;
+    if (!subject) {
+      toast.error('Prepare the passport first to generate the UNTP credentialSubject preview.');
+      return;
+    }
+    const productId = String(formData.productId || 'passport').replace(/[^a-zA-Z0-9]/g, '-');
+    downloadJson(subject, `dpp-untp-credentialSubject-${productId}.json`);
+  };
+
+  const handleExportUntpVcJsonLd = () => {
+    const vc = preparedData?.vcSignablePayload?.payload?.vc;
+    if (!vc) {
+      toast.error('Prepare the passport first to generate the UNTP VC JSON-LD preview.');
+      return;
+    }
+    const productId = String(formData.productId || 'passport').replace(/[^a-zA-Z0-9]/g, '-');
+    downloadJson(vc, `dpp-untp-vc-${productId}.json`);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const parseUrls = (text: string): string[] =>
-      text
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean);
+    const requiredMissing: string[] = [];
+    if (!String(formData.productId || '').trim()) requiredMissing.push('Product ID');
+    if (!String(formData.productName || '').trim()) requiredMissing.push('Product name');
+    if (!String(formData.manufacturerName || '').trim()) requiredMissing.push('Manufacturer name');
+    if (!String(formData.manufacturerIdentifier || '').trim()) requiredMissing.push('Manufacturer operator ID');
+    if (!String(formData.manufacturerCountry || '').trim()) requiredMissing.push('Manufacturer country');
+    if (!String(formData.manufacturerFacility || '').trim()) requiredMissing.push('Facility name');
+    if (!String(formData.manufacturerFacilityId || '').trim()) requiredMissing.push('Facility ID');
+    if (!String(formData.facilityCountry || '').trim()) requiredMissing.push('Facility country');
+    if (!String(formData.facilityCity || '').trim()) requiredMissing.push('Facility city');
+    if (!String(formData.facilityAddress || '').trim()) requiredMissing.push('Facility address');
+
+    if (requiredMissing.length > 0) {
+      toast.error(`Missing required fields: ${requiredMissing.join(', ')}`);
+      return;
+    }
 
     const complianceDocUrls = parseUrls(formData.annexComplianceDocUrls);
     const userInfoUrls = parseUrls(formData.annexUserInfoUrls);
     const imagesForAnnex = normalizeProductImagesForAnnex(productImages);
+    const complianceDocsFromUploads = complianceDocs.map((d) => ({
+      type: toComplianceDocType(d.docType),
+      title: d.title || d.name || undefined,
+      url: d.url,
+      sha256: d.hash || undefined,
+    }));
+    const userInfoFromUploads = userInfoDocs.map((d) => ({
+      type: toUserInformationType(d.docType),
+      title: d.title || d.name || undefined,
+      language: d.language || undefined,
+      url: d.url,
+      sha256: d.hash || undefined,
+    }));
     const hasAnnex =
       !!formData.annexGtin ||
       !!formData.annexTaricCode ||
@@ -485,6 +813,12 @@ export function DppHybridCreate({
       !!formData.annexImporterCountry ||
       !!formData.annexResponsibleName ||
       !!formData.annexResponsibleOperatorId ||
+      !!formData.manufacturerFacilityId ||
+      !!formData.facilityCountry ||
+      !!formData.facilityCity ||
+      !!formData.facilityAddress ||
+      complianceDocsFromUploads.length > 0 ||
+      userInfoFromUploads.length > 0 ||
       complianceDocUrls.length > 0 ||
       userInfoUrls.length > 0 ||
       imagesForAnnex.length > 0;
@@ -501,6 +835,7 @@ export function DppHybridCreate({
         identifier: formData.manufacturerIdentifier || undefined,
         country: formData.manufacturerCountry || undefined,
         facility: formData.manufacturerFacility || undefined,
+        facilityId: formData.manufacturerFacilityId || undefined,
       },
       ...(hasAnnex && {
         annexIII: {
@@ -510,8 +845,23 @@ export function DppHybridCreate({
             }),
           gtin: formData.annexGtin || undefined,
           taricCode: formData.annexTaricCode || undefined,
-          complianceDocs: complianceDocUrls.map((url) => ({ type: 'other', url })),
-          userInformation: userInfoUrls.map((url) => ({ type: 'manual', url })),
+          facilities: [
+            {
+              facilityId: formData.manufacturerFacilityId,
+              name: formData.manufacturerFacility || undefined,
+              country: formData.facilityCountry || undefined,
+              city: formData.facilityCity || undefined,
+              address: formData.facilityAddress || undefined,
+            },
+          ],
+          complianceDocs: [
+            ...complianceDocsFromUploads,
+            ...complianceDocUrls.map((url) => ({ type: 'other' as const, url })),
+          ],
+          userInformation: [
+            ...userInfoFromUploads,
+            ...userInfoUrls.map((url) => ({ type: 'manual' as const, url })),
+          ],
           ...(imagesForAnnex.length > 0 && {
             productImages: imagesForAnnex,
           }),
@@ -775,7 +1125,7 @@ export function DppHybridCreate({
               <div className='space-y-2 p-4 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg'>
                 <Label className='text-sm font-semibold'>Upload Product JSON</Label>
                 <p className='text-xs text-muted-foreground mb-3'>
-                  Upload a JSON file with product data. Required fields: productId, productName, granularity, manufacturer.name, manufacturer.identifier
+                  Upload either (1) the app create-input JSON or (2) a UNTP DPP VC JSON-LD (credentialSubject.@type="DigitalProductPassport").
                 </p>
                 <div className='flex gap-2'>
                   <input
@@ -795,14 +1145,28 @@ export function DppHybridCreate({
                     Choose JSON File
                   </Button>
                   {formData.productId && (
-                    <Button
-                      type='button'
-                      variant='outline'
-                      onClick={handleExportJson}
-                      disabled={isLoading}>
-                      <FileText className='w-4 h-4 mr-2' />
-                      Export Current as JSON
-                    </Button>
+                    <>
+                      <Button type='button' variant='outline' onClick={handleExportJson} disabled={isLoading}>
+                        <FileText className='w-4 h-4 mr-2' />
+                        Export input JSON
+                      </Button>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        onClick={handleExportUntpCredentialSubject}
+                        disabled={isLoading || !preparedData}>
+                        <FileText className='w-4 h-4 mr-2' />
+                        Export UNTP subject
+                      </Button>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        onClick={handleExportUntpVcJsonLd}
+                        disabled={isLoading || !preparedData}>
+                        <FileText className='w-4 h-4 mr-2' />
+                        Export UNTP VC (JSON-LD)
+                      </Button>
+                    </>
                   )}
                 </div>
                 {uploadError && (
@@ -811,6 +1175,14 @@ export function DppHybridCreate({
                     <AlertDescription className='text-xs'>{uploadError}</AlertDescription>
                   </Alert>
                 )}
+                {uploadedJsonPreview && (
+                  <details className='mt-3'>
+                    <summary className='cursor-pointer text-xs font-medium'>Uploaded JSON (preview)</summary>
+                    <pre className='mt-2 max-h-64 overflow-auto border bg-background p-3 text-xs'>
+                      {JSON.stringify(uploadedJsonPreview, null, 2)}
+                    </pre>
+                  </details>
+                )}
 	                {!connectedAccount && (
 	                  <p className='text-xs text-amber-600 dark:text-amber-400 mt-2'>
 	                    Connect your account to upload products
@@ -818,6 +1190,44 @@ export function DppHybridCreate({
 	                )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* UNTP JSON preview (server-prepared, before signing) */}
+        {phase !== 'complete' && preparedData?.vcSignablePayload?.payload?.vc && (
+          <div className='space-y-2'>
+            <div className='space-y-2 p-4 bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 rounded-lg'>
+              <div className='flex items-start justify-between gap-3'>
+                <div>
+                  <div className='text-sm font-semibold'>UNTP preview (what will be signed)</div>
+                  <p className='text-xs text-muted-foreground'>
+                    This is the UNTP VC JSON-LD generated by the server during “Prepare”, before signing and publishing.
+                  </p>
+                </div>
+                <div className='flex gap-2'>
+                  <Button type='button' variant='outline' onClick={handleExportUntpCredentialSubject}>
+                    <FileText className='w-4 h-4 mr-2' />
+                    Download subject
+                  </Button>
+                  <Button type='button' variant='outline' onClick={handleExportUntpVcJsonLd}>
+                    <FileText className='w-4 h-4 mr-2' />
+                    Download VC
+                  </Button>
+                </div>
+              </div>
+              <details>
+                <summary className='cursor-pointer text-xs font-medium'>VC JSON-LD</summary>
+                <pre className='mt-2 max-h-72 overflow-auto border bg-background p-3 text-xs'>
+                  {JSON.stringify(preparedData.vcSignablePayload.payload.vc, null, 2)}
+                </pre>
+              </details>
+              <details>
+                <summary className='cursor-pointer text-xs font-medium'>credentialSubject</summary>
+                <pre className='mt-2 max-h-72 overflow-auto border bg-background p-3 text-xs'>
+                  {JSON.stringify(preparedData.vcSignablePayload.payload.vc.credentialSubject, null, 2)}
+                </pre>
+              </details>
+            </div>
           </div>
         )}
 
@@ -1009,6 +1419,168 @@ export function DppHybridCreate({
               )}
             </div>
 
+            {/* Documents (IPFS) */}
+            <div className='space-y-3 bg-white/40 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-4'>
+              <div className='space-y-1'>
+                <div className='text-sm font-semibold'>Documents (optional)</div>
+                <div className='text-xs text-muted-foreground'>
+                  Upload PDFs and documents to IPFS. They will be referenced in Annex III as compliance docs and user information.
+                </div>
+              </div>
+
+              <input
+                ref={complianceDocsInputRef}
+                type='file'
+                accept='.pdf,.doc,.docx,.txt,.md,.json'
+                multiple
+                className='hidden'
+                onChange={async (e) => {
+                  const files = e.currentTarget.files;
+                  await uploadDocumentsToIpfs(files, 'compliance', { docType: 'other', language: undefined });
+                  e.currentTarget.value = '';
+                }}
+                disabled={isLoading || docUploadBusy || !connectedAccount}
+              />
+              <input
+                ref={userInfoDocsInputRef}
+                type='file'
+                accept='.pdf,.doc,.docx,.txt,.md,.json'
+                multiple
+                className='hidden'
+                onChange={async (e) => {
+                  const files = e.currentTarget.files;
+                  await uploadDocumentsToIpfs(files, 'user-info', { docType: 'manual', language: 'en' });
+                  e.currentTarget.value = '';
+                }}
+                disabled={isLoading || docUploadBusy || !connectedAccount}
+              />
+
+              <div className='flex flex-wrap gap-2'>
+                <Button
+                  type='button'
+                  variant='outline'
+                  onClick={() => complianceDocsInputRef.current?.click()}
+                  disabled={isLoading || docUploadBusy || !connectedAccount}>
+                  {docUploadBusy ? (
+                    <>
+                      <Loader2 className='w-4 h-4 mr-2 animate-spin' />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className='w-4 h-4 mr-2' />
+                      Upload compliance docs
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type='button'
+                  variant='outline'
+                  onClick={() => userInfoDocsInputRef.current?.click()}
+                  disabled={isLoading || docUploadBusy || !connectedAccount}>
+                  {docUploadBusy ? (
+                    <>
+                      <Loader2 className='w-4 h-4 mr-2 animate-spin' />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className='w-4 h-4 mr-2' />
+                      Upload manuals / instructions
+                    </>
+                  )}
+                </Button>
+                {(complianceDocs.length > 0 || userInfoDocs.length > 0) && (
+                  <Button
+                    type='button'
+                    variant='outline'
+                    onClick={() => {
+                      setComplianceDocs([]);
+                      setUserInfoDocs([]);
+                    }}
+                    disabled={isLoading || docUploadBusy}>
+                    Remove all
+                  </Button>
+                )}
+              </div>
+
+              {!connectedAccount && (
+                <div className='text-xs text-amber-600 dark:text-amber-400'>
+                  Connect your account to upload documents.
+                </div>
+              )}
+
+              {complianceDocs.length === 0 && userInfoDocs.length === 0 ? (
+                <div className='text-xs text-muted-foreground'>No documents uploaded yet.</div>
+              ) : (
+                <div className='space-y-3'>
+                  {complianceDocs.length > 0 && (
+                    <div className='space-y-2'>
+                      <div className='text-xs font-semibold'>Compliance documents</div>
+                      <div className='space-y-2'>
+                        {complianceDocs.map((doc, idx) => (
+                          <div
+                            key={`${doc.cid}-${idx}`}
+                            className='flex flex-wrap items-center justify-between gap-2 border bg-background p-2 text-xs'>
+                            <div className='min-w-0'>
+                              <div className='font-medium truncate'>{doc.title || doc.name || doc.cid}</div>
+                              <div className='text-muted-foreground truncate'>
+                                {doc.contentType || 'document'} · {Math.max(0, doc.size)} bytes
+                              </div>
+                            </div>
+                            <div className='flex items-center gap-2'>
+                              <a className='underline' href={doc.url} target='_blank' rel='noreferrer'>
+                                Open
+                              </a>
+                              <Button
+                                type='button'
+                                variant='outline'
+                                onClick={() => setComplianceDocs((prev) => prev.filter((_, i) => i !== idx))}
+                                disabled={isLoading || docUploadBusy}>
+                                Remove
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {userInfoDocs.length > 0 && (
+                    <div className='space-y-2'>
+                      <div className='text-xs font-semibold'>Manuals / instructions</div>
+                      <div className='space-y-2'>
+                        {userInfoDocs.map((doc, idx) => (
+                          <div
+                            key={`${doc.cid}-${idx}`}
+                            className='flex flex-wrap items-center justify-between gap-2 border bg-background p-2 text-xs'>
+                            <div className='min-w-0'>
+                              <div className='font-medium truncate'>{doc.title || doc.name || doc.cid}</div>
+                              <div className='text-muted-foreground truncate'>
+                                {doc.contentType || 'document'} · {Math.max(0, doc.size)} bytes
+                              </div>
+                            </div>
+                            <div className='flex items-center gap-2'>
+                              <a className='underline' href={doc.url} target='_blank' rel='noreferrer'>
+                                Open
+                              </a>
+                              <Button
+                                type='button'
+                                variant='outline'
+                                onClick={() => setUserInfoDocs((prev) => prev.filter((_, i) => i !== idx))}
+                                disabled={isLoading || docUploadBusy}>
+                                Remove
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Granularity-specific Fields */}
             <div className='grid grid-cols-2 gap-4'>
               <div className='space-y-2'>
@@ -1078,21 +1650,63 @@ export function DppHybridCreate({
                 />
               </div>
               <div className='space-y-2'>
-                <Label>Country</Label>
+                <Label>Manufacturer country *</Label>
                 <Input
                   value={formData.manufacturerCountry}
                   onChange={(e) => setFormData({ ...formData, manufacturerCountry: e.target.value })}
                   placeholder='e.g., US (ISO 3166-1 alpha-2)'
                   disabled={isLoading}
+                  required
                 />
               </div>
               <div className='space-y-2'>
-                <Label>Facility</Label>
+                <Label>Facility name *</Label>
                 <Input
                   value={formData.manufacturerFacility}
                   onChange={(e) => setFormData({ ...formData, manufacturerFacility: e.target.value })}
                   placeholder='Facility name'
                   disabled={isLoading}
+                  required
+                />
+              </div>
+              <div className='space-y-2'>
+                <Label>Facility ID *</Label>
+                <Input
+                  value={formData.manufacturerFacilityId}
+                  onChange={(e) => setFormData({ ...formData, manufacturerFacilityId: e.target.value })}
+                  placeholder='e.g., FAC-IT-MI-001'
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+              <div className='space-y-2'>
+                <Label>Facility country *</Label>
+                <Input
+                  value={formData.facilityCountry}
+                  onChange={(e) => setFormData({ ...formData, facilityCountry: e.target.value })}
+                  placeholder='e.g., IT (ISO 3166-1 alpha-2)'
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+              <div className='space-y-2'>
+                <Label>Facility city *</Label>
+                <Input
+                  value={formData.facilityCity}
+                  onChange={(e) => setFormData({ ...formData, facilityCity: e.target.value })}
+                  placeholder='e.g., Milan'
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+              <div className='space-y-2'>
+                <Label>Facility address *</Label>
+                <Input
+                  value={formData.facilityAddress}
+                  onChange={(e) => setFormData({ ...formData, facilityAddress: e.target.value })}
+                  placeholder='Street and number'
+                  disabled={isLoading}
+                  required
                 />
               </div>
             </div>

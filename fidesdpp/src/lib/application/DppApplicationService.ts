@@ -681,7 +681,6 @@ export class DppApplicationService {
         description: input.productDescription,
         batchNumber: input.batchNumber,
         serialNumber: input.serialNumber,
-        productionDate: input.productionDate,
         countryOfProduction: input.countryOfProduction,
         category: input.category,
       },
@@ -1385,8 +1384,16 @@ export class DppApplicationService {
         '@type': 'Organization',
         name: input.manufacturer.name,
         identifier: input.manufacturer.identifier,
-        country: input.manufacturer.country,
-        facility: input.manufacturer.facility,
+        addressCountry: input.manufacturer.country,
+        ...(input.manufacturer.facility
+          ? {
+              facility: {
+                '@type': 'Facility',
+                name: input.manufacturer.facility,
+                identifier: input.manufacturer.facilityId,
+              },
+            }
+          : {}),
       },
     };
 

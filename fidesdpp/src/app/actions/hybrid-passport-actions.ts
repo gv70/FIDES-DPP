@@ -40,6 +40,17 @@ export async function prepareCreatePassport(
       return { error: 'Manufacturer name and identifier are required' };
     }
 
+    // Generic cross-category "ESPR-ready" basics
+    if (!input.manufacturer?.country) {
+      return { error: 'Manufacturer country is required' };
+    }
+    if (!input.manufacturer?.facility) {
+      return { error: 'Production facility name is required' };
+    }
+    if (!input.manufacturer?.facilityId) {
+      return { error: 'Production facility ID is required' };
+    }
+
     if (!input.issuerAddress || !input.issuerPublicKey) {
       return { error: 'Issuer address and public key are required' };
     }
@@ -59,6 +70,12 @@ export async function prepareCreatePassport(
     }
     if (input.granularity === 'Item' && !input.serialNumber) {
       return { error: 'Serial Number is required for Item granularity' };
+    }
+
+    // Facility address/city: enforce via annexIII.facilities[0]
+    const facility = input.annexIII?.facilities?.[0];
+    if (!facility?.country || !facility?.city || !facility?.address) {
+      return { error: 'Facility country, city and address are required' };
     }
 
     // Validate did:web authorization if enabled

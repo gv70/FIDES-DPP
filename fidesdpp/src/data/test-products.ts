@@ -31,6 +31,18 @@ export const testProducts: TestProduct[] = [
         identifier: 'VAT-IT12345678901',
         country: 'IT',
         facility: 'Milan Factory',
+        facilityId: 'FAC-IT-MI-001',
+      },
+      annexIII: {
+        facilities: [
+          {
+            facilityId: 'FAC-IT-MI-001',
+            name: 'Milan Factory',
+            country: 'IT',
+            city: 'Milano',
+            address: 'Via Esempio 1',
+          },
+        ],
       },
       issuerAddress: '', // Will be filled from wallet
       issuerPublicKey: '', // Will be filled from wallet
@@ -51,6 +63,18 @@ export const testProducts: TestProduct[] = [
         identifier: 'VAT-IT98765432109',
         country: 'IT',
         facility: 'Bergamo Assembly',
+        facilityId: 'FAC-IT-BG-002',
+      },
+      annexIII: {
+        facilities: [
+          {
+            facilityId: 'FAC-IT-BG-002',
+            name: 'Bergamo Assembly',
+            country: 'IT',
+            city: 'Bergamo',
+            address: 'Via Esempio 2',
+          },
+        ],
       },
       issuerAddress: '',
       issuerPublicKey: '',
@@ -70,6 +94,18 @@ export const testProducts: TestProduct[] = [
         identifier: 'VAT-SE1234567890',
         country: 'SE',
         facility: 'Gothenburg Upholstery',
+        facilityId: 'FAC-SE-GOT-003',
+      },
+      annexIII: {
+        facilities: [
+          {
+            facilityId: 'FAC-SE-GOT-003',
+            name: 'Gothenburg Upholstery',
+            country: 'SE',
+            city: 'Göteborg',
+            address: 'Examplegatan 3',
+          },
+        ],
       },
       issuerAddress: '',
       issuerPublicKey: '',
@@ -90,6 +126,18 @@ export const testProducts: TestProduct[] = [
         identifier: 'VAT-IT01234567890',
         country: 'IT',
         facility: 'Treviso Plant',
+        facilityId: 'FAC-IT-TV-004',
+      },
+      annexIII: {
+        facilities: [
+          {
+            facilityId: 'FAC-IT-TV-004',
+            name: 'Treviso Plant',
+            country: 'IT',
+            city: 'Treviso',
+            address: 'Via Esempio 4',
+          },
+        ],
       },
       issuerAddress: '',
       issuerPublicKey: '',
@@ -110,6 +158,18 @@ export const testProducts: TestProduct[] = [
         identifier: 'VAT-UK987654321',
         country: 'GB',
         facility: 'London Workshop',
+        facilityId: 'FAC-GB-LON-005',
+      },
+      annexIII: {
+        facilities: [
+          {
+            facilityId: 'FAC-GB-LON-005',
+            name: 'London Workshop',
+            country: 'GB',
+            city: 'London',
+            address: 'Example Street 5',
+          },
+        ],
       },
       issuerAddress: '',
       issuerPublicKey: '',
@@ -137,8 +197,19 @@ export function loadProductFromJson(jsonString: string): CreatePassportFormInput
       !data.productName ||
       !data.granularity ||
       !data.manufacturer?.name ||
-      !data.manufacturer?.identifier
+      !data.manufacturer?.identifier ||
+      !data.manufacturer?.country ||
+      !data.manufacturer?.facility ||
+      !data.manufacturer?.facilityId
     ) {
+      return null;
+    }
+
+    const firstFacility =
+      Array.isArray(data.annexIII?.facilities) && data.annexIII.facilities.length > 0
+        ? data.annexIII.facilities[0]
+        : null;
+    if (!firstFacility?.country || !firstFacility?.city || !firstFacility?.address) {
       return null;
     }
     
@@ -171,6 +242,7 @@ export function loadProductFromJson(jsonString: string): CreatePassportFormInput
         identifier: data.manufacturer.identifier,
         country: data.manufacturer.country,
         facility: data.manufacturer.facility,
+        facilityId: data.manufacturer.facilityId,
       },
       annexIII: data.annexIII,
       ...(traceabilityFromJson && traceabilityFromJson.length > 0 ? { traceability: traceabilityFromJson } : {}),

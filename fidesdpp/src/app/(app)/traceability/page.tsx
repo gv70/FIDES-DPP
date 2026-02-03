@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { usePilotContext } from '@/hooks/use-pilot-context';
 import { toast } from 'sonner';
 import { toEvmAddress } from 'dedot/contracts';
+import type { IssuerDirectoryEntry } from '@/lib/issuer/issuer-directory';
 
 type EventsSource = 'builder' | 'json';
 
@@ -131,7 +132,11 @@ function extractEvidenceLinks(obj: any): Array<{ href: string; label?: string }>
   return out;
 }
 
-function RenderedDtePreview(props: { events: any[]; maxEvents?: number }) {
+function RenderedDtePreview(props: {
+  events: any[];
+  maxEvents?: number;
+  partyLabelForId?: (id: string) => string;
+}) {
   const maxEvents = Number.isFinite(props.maxEvents) ? Number(props.maxEvents) : 20;
   const events = Array.isArray(props.events) ? props.events.filter((e) => e && typeof e === 'object') : [];
   if (events.length === 0) return null;
@@ -153,6 +158,13 @@ function RenderedDtePreview(props: { events: any[]; maxEvents?: number }) {
             ev?.bizLocation?.id || ev?.bizLocation || ev?.readPoint?.id || ev?.readPoint || ev?.location || ev?.facility || '';
           const location = String(locationRaw || '').trim();
           const evidence = extractEvidenceLinks(ev);
+          const sourcePartyRaw = Array.isArray(ev?.sourceParty)
+            ? ev.sourceParty[0]
+            : ev?.sourceParty && typeof ev.sourceParty === 'object'
+              ? ev.sourceParty
+              : null;
+          const supplierId = String(sourcePartyRaw?.id || sourcePartyRaw || '').trim();
+          const supplierLabel = supplierId && props.partyLabelForId ? props.partyLabelForId(supplierId) : supplierId;
 
           const previewList = (list: any[], max = 5): string => {
             const items = list
@@ -202,6 +214,11 @@ function RenderedDtePreview(props: { events: any[]; maxEvents?: number }) {
                     {when || 'Event time not provided'}
                     {location ? ` · location: ${location}` : ''}
                   </div>
+                  {supplierLabel && (
+                    <div className='text-xs text-muted-foreground'>
+                      Supplier: <code>{supplierLabel}</code>
+                    </div>
+                  )}
                 </div>
                 <div className='text-xs text-muted-foreground'>#{idx + 1}</div>
               </div>
@@ -217,6 +234,12 @@ function RenderedDtePreview(props: { events: any[]; maxEvents?: number }) {
                   <div>
                     <span className='text-muted-foreground'>Action: </span>
                     <code>{action}</code>
+                  </div>
+                )}
+                {supplierLabel && (
+                  <div className='md:col-span-2'>
+                    <span className='text-muted-foreground'>Supplier: </span>
+                    <code>{supplierLabel}</code>
                   </div>
                 )}
                 {outputs.length > 0 && (
@@ -344,6 +367,34 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
 
   const [issuerDidInput, setIssuerDidInput] = useState<string>(pilotDid || '');
   const issuerDid = useMemo(() => normalizeDidWebInput(issuerDidInput), [issuerDidInput]);
+  const [issuerDirectory, setIssuerDirectory] = useState<IssuerDirectoryEntry[] | null>(null);
+
+  const partyLabelForId = useCallback(
+    (id: string): string => {
+      const did = String(id || '').trim();
+      if (!did) return '';
+      const hit = Array.isArray(issuerDirectory) ? issuerDirectory.find((e) => e.did === did) : null;
+      return String(hit?.organizationName || hit?.domain || did).trim() || did;
+    },
+    [issuerDirectory]
+  );
+
+  useEffect(() => {
+    if (issuerDirectory) return;
+    void (async () => {
+      try {
+        const res = await fetch('/api/issuer/directory', { method: 'GET' });
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.success && Array.isArray(json.issuers)) {
+          setIssuerDirectory(json.issuers as IssuerDirectoryEntry[]);
+        } else {
+          setIssuerDirectory([]);
+        }
+      } catch {
+        setIssuerDirectory([]);
+      }
+    })();
+  }, [issuerDirectory]);
 
   const [loadingPassports, setLoadingPassports] = useState(false);
   const [passports, setPassports] = useState<PassportListItem[]>([]);
@@ -933,6 +984,11 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
               placeholder='did:web:fidesdpp.xyz (or domain like fidesdpp.xyz)'
               disabled={busy}
             />
+            {issuerDid && (
+              <div className='text-xs text-muted-foreground'>
+                Supplier (resolved): <code>{partyLabelForId(issuerDid)}</code>
+              </div>
+            )}
             {pilotDid && (
               <div className='text-xs text-muted-foreground'>
                 Pilot Mode detected: a ready-to-use issuer is available (<code>{pilotDid}</code>).
@@ -1615,7 +1671,7 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
                   </div>
 
                   <div className='md:col-span-2'>
-                    <RenderedDtePreview events={eventsForSubmit} />
+                    <RenderedDtePreview events={eventsForSubmit} partyLabelForId={partyLabelForId} />
                   </div>
 
                   <div className='space-y-3 md:col-span-2 border rounded-lg p-4'>
@@ -1872,135 +1928,8 @@ const TraceabilityPageInner = memo(function TraceabilityPageInner(props: {
                 )}
 
                 {dtePreviewEvents.length > 0 && (
-                  <div className='space-y-3 border rounded-lg p-4'>
-                    <div className='font-medium'>Rendered preview (DTE)</div>
-                    <div className='text-xs text-muted-foreground'>
-                      A human-friendly preview of the signed DTE contents (similar to what is shown in the customer view timeline).
-                    </div>
-
-                    <div className='space-y-3'>
-                      {dtePreviewEvents.slice(0, 20).map((ev, idx) => {
-                        const outputs = Array.isArray(ev?.outputEPCList) ? ev.outputEPCList : [];
-                        const inputs = Array.isArray(ev?.inputEPCList) ? ev.inputEPCList : [];
-                        const qIn = Array.isArray(ev?.inputQuantityList) ? ev.inputQuantityList : [];
-                        const qOut = Array.isArray(ev?.outputQuantityList) ? ev.outputQuantityList : [];
-                        const locationRaw =
-                          ev?.bizLocation?.id || ev?.bizLocation || ev?.readPoint?.id || ev?.readPoint || ev?.location || ev?.facility || '';
-                        const location = String(locationRaw || '').trim();
-                        const evidence = extractEvidenceLinks(ev);
-
-                        const previewList = (list: any[], max = 5): string => {
-                          const items = list
-                            .slice(0, max)
-                            .map((i: any) => {
-                              const id = String(i?.id || i?.epc || i || '').trim();
-                              const name = String(i?.name || i?.title || '').trim();
-                              if (!id && !name) return '';
-                              return name ? `${id} (${name})` : id;
-                            })
-                            .filter(Boolean);
-                          if (items.length === 0) return '';
-                          const more = list.length > max ? ` +${list.length - max} more` : '';
-                          return `${items.join(', ')}${more}`;
-                        };
-
-                        const previewQty = (list: any[], max = 5): string => {
-                          const items = list
-                            .slice(0, max)
-                            .map((i: any) => {
-                              const pid = String(i?.productId || '').trim();
-                              const nm = String(i?.productName || '').trim();
-                              const qty = i?.quantity;
-                              const uom = String(i?.uom || '').trim();
-                              if (!pid) return '';
-                              const left = nm ? `${pid} (${nm})` : pid;
-                              const right = qty != null && uom ? `${qty} ${uom}` : qty != null ? String(qty) : '';
-                              return right ? `${left}: ${right}` : left;
-                            })
-                            .filter(Boolean);
-                          if (items.length === 0) return '';
-                          const more = list.length > max ? ` +${list.length - max} more` : '';
-                          return `${items.join(', ')}${more}`;
-                        };
-
-                        const title = guessEventType(ev);
-                        const when = guessEventTime(ev);
-                        const processType = String(ev?.processType || ev?.process || '').trim();
-                        const action = String(ev?.action || '').trim();
-
-                        return (
-                          <div key={`dte-preview-${idx}`} className='rounded-lg border p-3 space-y-2'>
-                            <div className='flex items-start justify-between gap-3'>
-                              <div className='space-y-1'>
-                                <div className='font-medium'>{title}</div>
-                                <div className='text-xs text-muted-foreground'>
-                                  {when || 'Event time not provided'}
-                                  {location ? ` · location: ${location}` : ''}
-                                </div>
-                              </div>
-                              <div className='text-xs text-muted-foreground'>#{idx + 1}</div>
-                            </div>
-
-                            <div className='grid grid-cols-1 md:grid-cols-2 gap-2 text-xs'>
-                              {processType && (
-                                <div>
-                                  <span className='text-muted-foreground'>Process: </span>
-                                  <code>{processType}</code>
-                                </div>
-                              )}
-                              {action && (
-                                <div>
-                                  <span className='text-muted-foreground'>Action: </span>
-                                  <code>{action}</code>
-                                </div>
-                              )}
-                              {outputs.length > 0 && (
-                                <div className='md:col-span-2'>
-                                  <span className='text-muted-foreground'>Outputs: </span>
-                                  <code>{previewList(outputs)}</code>
-                                </div>
-                              )}
-                              {inputs.length > 0 && (
-                                <div className='md:col-span-2'>
-                                  <span className='text-muted-foreground'>Inputs: </span>
-                                  <code>{previewList(inputs)}</code>
-                                </div>
-                              )}
-                              {qOut.length > 0 && (
-                                <div className='md:col-span-2'>
-                                  <span className='text-muted-foreground'>Output quantities: </span>
-                                  <code>{previewQty(qOut)}</code>
-                                </div>
-                              )}
-                              {qIn.length > 0 && (
-                                <div className='md:col-span-2'>
-                                  <span className='text-muted-foreground'>Input quantities: </span>
-                                  <code>{previewQty(qIn)}</code>
-                                </div>
-                              )}
-                            </div>
-
-                            {evidence.length > 0 && (
-                              <div className='flex flex-wrap gap-2 pt-1'>
-                                {evidence.slice(0, 8).map((l, i) => (
-                                  <Button asChild key={`dte-evidence-${idx}-${i}`} type='button' size='sm' variant='outline'>
-                                    <Link href={l.href} target='_blank' rel='noreferrer'>
-                                      {l.label ? String(l.label) : 'Evidence'}
-                                    </Link>
-                                  </Button>
-                                ))}
-                              </div>
-                            )}
-
-                            <details className='text-xs'>
-                              <summary className='cursor-pointer text-muted-foreground'>Technical fields</summary>
-                              <pre className='mt-2 whitespace-pre-wrap font-mono text-[11px]'>{JSON.stringify(ev, null, 2)}</pre>
-                            </details>
-                          </div>
-                        );
-                      })}
-                    </div>
-
+                  <div className='space-y-2'>
+                    <RenderedDtePreview events={dtePreviewEvents} maxEvents={20} partyLabelForId={partyLabelForId} />
                     {dtePreviewEvents.length > 20 && (
                       <div className='text-xs text-muted-foreground'>Showing first 20 events.</div>
                     )}

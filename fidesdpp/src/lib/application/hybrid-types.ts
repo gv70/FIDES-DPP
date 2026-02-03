@@ -30,6 +30,7 @@ export interface CreatePassportFormInput {
     identifier?: string;
     country?: string;
     facility?: string;
+    facilityId?: string;
   };
 
   /**
@@ -76,6 +77,8 @@ export interface CreatePassportFormInput {
       facilityId: string;
       name?: string;
       country?: string;
+      city?: string;
+      address?: string;
     }>;
 
     // (j) Importer information (incl. EORI)
