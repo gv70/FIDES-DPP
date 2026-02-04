@@ -76,6 +76,14 @@ function splitLot(id: string): { code: string; lot?: string } {
     return { code, lot };
   }
 
+  if (s.startsWith('urn:component:')) {
+    s = s.slice('urn:component:'.length);
+    const [baseRaw, fragRaw] = s.split('#', 2);
+    const code = decodeURIComponentSafe(baseRaw || '');
+    const lot = fragRaw != null && fragRaw !== '' ? decodeURIComponentSafe(fragRaw) : undefined;
+    return { code, lot };
+  }
+
   const idx = s.indexOf('#');
   if (idx < 0) return { code: s };
   return { code: decodeURIComponentSafe(s.slice(0, idx)), lot: decodeURIComponentSafe(s.slice(idx + 1)) || undefined };
@@ -93,20 +101,36 @@ function collectComponentsFromDtes(dtes: RenderDteDetails[]): Array<{
   for (const dte of dtes || []) {
     for (const ev of dte.events || []) {
       const raw = ev.raw || {};
-      const inputs = Array.isArray(raw?.inputEPCList) ? raw.inputEPCList : [];
-      for (const it of inputs) {
-        const id = String(it?.id || it || '').trim();
-        if (!id) continue;
+      const add = (idRaw: any, nameRaw: any) => {
+        const id = String(idRaw || '').trim();
+        if (!id) return;
         const { code, lot } = splitLot(id);
-        const name = String(it?.name || '').trim() || undefined;
-        const key = id;
-        const existing = map.get(key);
-        if (!existing) {
-          map.set(key, { id, code, lot, name, seenIn: 1 });
-        } else {
+        const name = String(nameRaw || '').trim() || undefined;
+        const existing = map.get(id);
+        if (!existing) map.set(id, { id, code, lot, name, seenIn: 1 });
+        else {
           existing.seenIn += 1;
           if (!existing.name && name) existing.name = name;
         }
+      };
+
+      // Serialized/identifier inputs
+      const inputs = Array.isArray(raw?.inputEPCList) ? raw.inputEPCList : [];
+      for (const it of inputs) add(it?.id || it, it?.name);
+
+      // Bulk materials/components: in our importer these are `urn:component:...` in quantity lists
+      const inputQty = Array.isArray(raw?.inputQuantityList) ? raw.inputQuantityList : [];
+      for (const q of inputQty) {
+        const pid = String(q?.productId || '').trim();
+        if (!pid.startsWith('urn:component:')) continue;
+        add(pid, q?.productName);
+      }
+
+      const qty = Array.isArray(raw?.quantityList) ? raw.quantityList : [];
+      for (const q of qty) {
+        const pid = String(q?.productId || '').trim();
+        if (!pid.startsWith('urn:component:')) continue;
+        add(pid, q?.productName);
       }
     }
   }
