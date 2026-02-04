@@ -66,6 +66,18 @@ export class DidWebManager {
     return process.env.FIDES_MODE === 'test' || process.env.TEST_MODE === '1';
   }
 
+  private normalizePolkadotNetworkId(value: string): string {
+    const raw = String(value || '').trim().toLowerCase();
+    const withoutPrefix = raw.replace(/^polkadot:/, '');
+    const normalizedSeparators = withoutPrefix.replace(/_/g, '-');
+
+    // Common aliases used across the codebase / deployments.
+    if (normalizedSeparators === 'assethub-westend') return 'westend-asset-hub';
+    if (normalizedSeparators === 'westendassethub') return 'westend-asset-hub';
+
+    return normalizedSeparators;
+  }
+
   private isSandboxLocalDid(did: string): boolean {
     if (!this.isTestMode()) return false;
     if (!did.startsWith('did:web:')) return false;
@@ -1374,9 +1386,9 @@ export class DidWebManager {
     }
 
     // Check if address is in authorized list
-    const targetNetwork = network || 'asset-hub';
+    const targetNetwork = this.normalizePolkadotNetworkId(network || 'asset-hub');
     return identity.authorizedPolkadotAccounts.some(
-      acc => acc.address === address && acc.network === targetNetwork
+      acc => acc.address === address && this.normalizePolkadotNetworkId(acc.network || 'asset-hub') === targetNetwork
     );
   }
 
@@ -1402,6 +1414,7 @@ export class DidWebManager {
     try {
       response = await fetch(didUrl, {
         signal: AbortSignal.timeout(10000), // 10 second timeout
+        cache: 'no-store' as RequestCache,
       });
     } catch (fetchError: any) {
       const errorMessage = fetchError.message || 'Unknown error';
@@ -1420,16 +1433,15 @@ export class DidWebManager {
     const didDocument = await response.json();
 
     // Extract service endpoint URL
-    const serviceEndpointUrl = this.extractPolkadotAccountsServiceEndpoint(didDocument);
-    if (!serviceEndpointUrl) {
-      return false; // No PolkadotAccounts service found
-    }
+    const serviceEndpointUrl =
+      this.extractPolkadotAccountsServiceEndpoint(didDocument) || this.getPolkadotAccountsServiceEndpoint(did);
 
     // Fetch accounts from endpoint
     let accountsResponse: Response;
     try {
       accountsResponse = await fetch(serviceEndpointUrl, {
         signal: AbortSignal.timeout(10000), // 10 second timeout
+        cache: 'no-store' as RequestCache,
       });
     } catch (fetchError: any) {
       const errorMessage = fetchError.message || 'Unknown error';
@@ -1450,16 +1462,24 @@ export class DidWebManager {
     const accountsDoc = await accountsResponse.json();
 
     // Verify account is in the list
-    const targetNetwork = network || 'asset-hub';
-    const networkPrefix = `polkadot:${targetNetwork}`;
+    if (typeof accountsDoc?.did === 'string' && accountsDoc.did !== did) {
+      return false;
+    }
+
+    const targetNetwork = this.normalizePolkadotNetworkId(network || 'asset-hub');
+    const targetAddress = String(address || '').trim();
 
     if (!accountsDoc.accounts || !Array.isArray(accountsDoc.accounts)) {
       return false;
     }
 
     for (const accountGroup of accountsDoc.accounts) {
-      if (accountGroup.network === networkPrefix && accountGroup.addresses) {
-        return accountGroup.addresses.includes(address);
+      const groupNetwork = this.normalizePolkadotNetworkId(String(accountGroup?.network || ''));
+      if (groupNetwork !== targetNetwork) continue;
+
+      if (Array.isArray(accountGroup?.addresses)) {
+        const addresses = accountGroup.addresses.map((a: any) => String(a || '').trim());
+        return addresses.includes(targetAddress);
       }
     }
 
