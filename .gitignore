@@ -123,6 +123,9 @@ dev-a/
 # Local backups / artifacts
 backups/
 
+# Generated output artifacts (imports, exports, reports)
+out/
+
 # App local secrets / state
 fidesdpp/.env.local
 fidesdpp/.env.local.*
@@ -158,6 +161,11 @@ vercel-did-site/
 **/.next/
 **/.turbo/
 fidesdpp/.npm-cache/
+
+# Python artifacts
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
 
 # IDE files
 **/.git/

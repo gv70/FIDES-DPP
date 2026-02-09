@@ -197,19 +197,8 @@ export function loadProductFromJson(jsonString: string): CreatePassportFormInput
       !data.productName ||
       !data.granularity ||
       !data.manufacturer?.name ||
-      !data.manufacturer?.identifier ||
-      !data.manufacturer?.country ||
-      !data.manufacturer?.facility ||
-      !data.manufacturer?.facilityId
+      !data.manufacturer?.identifier
     ) {
-      return null;
-    }
-
-    const firstFacility =
-      Array.isArray(data.annexIII?.facilities) && data.annexIII.facilities.length > 0
-        ? data.annexIII.facilities[0]
-        : null;
-    if (!firstFacility?.country || !firstFacility?.city || !firstFacility?.address) {
       return null;
     }
     

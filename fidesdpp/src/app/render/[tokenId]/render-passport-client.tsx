@@ -55,6 +55,92 @@ function friendlyEventLabel(rawType: string, locale: Locale): string {
   return locale === 'it' ? 'Evento' : 'Event';
 }
 
+type HistoryEventKind = 'material_entry' | 'production' | 'other';
+
+function classifyHistoryEvent(kindRaw: any, raw: any): HistoryEventKind {
+  const processType = String(raw?.processType || '').trim().toLowerCase();
+  if (processType === 'materialentry' || processType === 'material_entry' || processType.includes('materialentry')) return 'material_entry';
+  if (processType === 'production' || processType.includes('production')) return 'production';
+
+  const t = String(kindRaw || '').trim().toLowerCase();
+  if (t.includes('transformation')) return 'production';
+  return 'other';
+}
+
+function historyKindLabel(kind: HistoryEventKind, locale: Locale): string {
+  if (kind === 'material_entry') return locale === 'it' ? 'Entrata merci' : 'Goods receipt';
+  if (kind === 'production') return locale === 'it' ? 'Produzione' : 'Production';
+  return locale === 'it' ? 'Altro' : 'Other';
+}
+
+function historyKindStyles(kind: HistoryEventKind): { dot: string; chip: string } {
+  switch (kind) {
+    case 'material_entry':
+      return { dot: 'bg-amber-500', chip: 'border-amber-200 bg-amber-50 text-amber-900' };
+    case 'production':
+      return { dot: 'bg-emerald-500', chip: 'border-emerald-200 bg-emerald-50 text-emerald-900' };
+    default:
+      return { dot: 'bg-slate-400', chip: 'border-slate-200 bg-slate-50 text-slate-900' };
+  }
+}
+
+function eventLabelForDisplay(eventTypeRaw: any, raw: any, locale: Locale): string {
+  const kind = classifyHistoryEvent(eventTypeRaw, raw);
+  if (kind === 'material_entry') return historyKindLabel(kind, locale);
+  if (kind === 'production') return historyKindLabel(kind, locale);
+  return friendlyEventLabel(kv(eventTypeRaw), locale);
+}
+
+function parseEventTimeMs(isoLike: any): number | null {
+  const raw = String(isoLike || '').trim();
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.getTime();
+}
+
+function formatUtcDate(ts: number, locale: Locale, opts?: Intl.DateTimeFormatOptions): string {
+  const code = locale === 'it' ? 'it-IT' : 'en-US';
+  const d = new Date(ts);
+  return new Intl.DateTimeFormat(code, { timeZone: 'UTC', ...(opts || {}) }).format(d);
+}
+
+function listPreview(list: any[], locale: Locale, max = 3): string {
+  const arr = Array.isArray(list) ? list : [];
+  const items = arr
+    .slice(0, max)
+    .map((i: any) => {
+      const id = String(i?.id || i || '').trim();
+      const name = String(i?.name || '').trim();
+      if (!id && !name) return '';
+      return name ? `${id} (${name})` : id;
+    })
+    .filter(Boolean);
+  if (items.length === 0) return '';
+  const more = arr.length > max ? ` +${arr.length - max} ${locale === 'it' ? 'altri' : 'more'}` : '';
+  return `${items.join(', ')}${more}`;
+}
+
+function qtyPreview(list: any[], locale: Locale, max = 3): string {
+  const arr = Array.isArray(list) ? list : [];
+  const items = arr
+    .slice(0, max)
+    .map((i: any) => {
+      const pid = String(i?.productId || '').trim();
+      const nm = String(i?.productName || '').trim();
+      const qty = i?.quantity;
+      const uom = String(i?.uom || '').trim();
+      if (!pid) return '';
+      const left = nm ? `${pid} (${nm})` : pid;
+      const right = qty != null && uom ? `${qty} ${uom}` : qty != null ? String(qty) : '';
+      return right ? `${left}: ${right}` : left;
+    })
+    .filter(Boolean);
+  if (items.length === 0) return '';
+  const more = arr.length > max ? ` +${arr.length - max} ${locale === 'it' ? 'altri' : 'more'}` : '';
+  return `${items.join(', ')}${more}`;
+}
+
 function decodeURIComponentSafe(value: string): string {
   try {
     return decodeURIComponent(value);
@@ -211,6 +297,213 @@ function downloadTextFile(filename: string, content: string, mime = 'text/plain;
   setTimeout(() => URL.revokeObjectURL(url), 500);
 }
 
+type HistoryPoint = {
+  id: string;
+  recordCid: string;
+  recordHref: string;
+  issuerName: string;
+  preview?: boolean;
+  eventType?: string;
+  eventTime?: string;
+  ts?: number;
+  kind: HistoryEventKind;
+  summary?: string;
+  evidence: Array<{ href: string; label?: string }>;
+  raw: any;
+};
+
+function MilestoneTimeline(props: { events: HistoryPoint[]; locale: Locale }) {
+  const { events, locale } = props;
+  const [openId, setOpenId] = useState<string>('');
+
+  const groups = useMemo(() => {
+    const map = new Map<string, { key: string; ts: number | null; items: HistoryPoint[] }>();
+    for (const e of events) {
+      const ts = typeof e.ts === 'number' && Number.isFinite(e.ts) ? e.ts : null;
+      const key = ts != null ? new Date(ts).toISOString().slice(0, 10) : 'unknown';
+      const existing = map.get(key);
+      if (!existing) map.set(key, { key, ts, items: [e] });
+      else existing.items.push(e);
+    }
+    const out = Array.from(map.values());
+    out.sort((a, b) => {
+      const ta = a.ts ?? Number.POSITIVE_INFINITY;
+      const tb = b.ts ?? Number.POSITIVE_INFINITY;
+      return ta - tb;
+    });
+    for (const g of out) {
+      g.items.sort((a, b) => {
+        const ta = a.ts ?? Number.POSITIVE_INFINITY;
+        const tb = b.ts ?? Number.POSITIVE_INFINITY;
+        return ta - tb;
+      });
+    }
+    return out;
+  }, [events]);
+
+  if (groups.length === 0) {
+    return (
+      <div className='text-sm text-muted-foreground'>
+        {locale === 'it'
+          ? 'Non ci sono eventi disponibili per costruire una timeline.'
+          : 'No events are available to build a timeline.'}
+      </div>
+    );
+  }
+
+  return (
+    <div className='space-y-6'>
+      {groups.map((g) => {
+        const dateLabel =
+          g.ts != null
+            ? formatUtcDate(g.ts, locale, { weekday: 'short', year: 'numeric', month: 'short', day: '2-digit' })
+            : locale === 'it'
+              ? 'Data non disponibile'
+              : 'Date not available';
+        return (
+          <div key={g.key} className='grid grid-cols-1 md:grid-cols-[150px_1fr] gap-3'>
+            <div className='text-xs text-muted-foreground md:pt-2'>{dateLabel}</div>
+            <div className='space-y-3'>
+              {g.items.map((e) => {
+                const raw = e.raw || {};
+                const style = historyKindStyles(e.kind);
+                const label = eventLabelForDisplay(e.eventType, raw, locale);
+                const timeLabel = typeof e.ts === 'number'
+                  ? formatUtcDate(e.ts, locale, { hour: '2-digit', minute: '2-digit' }) + ' UTC'
+                  : kv(e.eventTime);
+
+                const outputs = Array.isArray(raw?.outputEPCList) ? raw.outputEPCList : [];
+                const inputs = Array.isArray(raw?.inputEPCList) ? raw.inputEPCList : [];
+                const qty = Array.isArray(raw?.quantityList) ? raw.quantityList : [];
+                const qIn = Array.isArray(raw?.inputQuantityList) ? raw.inputQuantityList : [];
+                const qOut = Array.isArray(raw?.outputQuantityList) ? raw.outputQuantityList : [];
+
+                const notes = raw?.notes && typeof raw.notes === 'object' ? raw.notes : null;
+                const supplierName = String(notes?.supplierName || '').trim();
+                const materialDoc = String(notes?.materialDoc || '').trim();
+                const materialExpiry = String(notes?.materialExpiry || '').trim();
+
+                const isOpen = openId === e.id;
+
+                return (
+                  <div key={e.id} className='relative pl-6'>
+                    <div className='absolute left-2 top-4 bottom-0 w-px bg-border' />
+                    <button
+                      type='button'
+                      className={[
+                        'absolute left-2 top-4 -translate-x-1/2 h-3.5 w-3.5 rounded-full ring-2 ring-background shadow',
+                        style.dot,
+                      ].join(' ')}
+                      title={label}
+                      onClick={() => setOpenId(isOpen ? '' : e.id)}
+                    />
+
+                    <div className='rounded-lg border bg-background p-3 space-y-2'>
+                      <div className='flex flex-col md:flex-row md:items-start md:justify-between gap-2'>
+                        <div className='space-y-1'>
+                          <div className='flex flex-wrap items-center gap-2'>
+                            <span className={['inline-flex items-center rounded-full border px-2 py-0.5 text-xs', style.chip].join(' ')}>
+                              {label}
+                            </span>
+                            <span className='text-xs text-muted-foreground'>{timeLabel}</span>
+                          </div>
+                          {e.summary ? <div className='text-xs text-muted-foreground'>{clampText(e.summary, 200)}</div> : null}
+                        </div>
+                        <div className='flex items-center gap-2'>
+                          <Button asChild type='button' size='sm' variant='outline'>
+                            <Link href={e.recordHref} target='_blank' rel='noreferrer'>
+                              {shortenId(e.recordCid)}
+                            </Link>
+                          </Button>
+                        </div>
+                      </div>
+
+                      {(outputs.length || inputs.length || qty.length || qOut.length || qIn.length) ? (
+                        <div className='grid grid-cols-1 md:grid-cols-2 gap-2 text-xs'>
+                          {outputs.length > 0 && (
+                            <div className='md:col-span-2'>
+                              <span className='text-muted-foreground'>{locale === 'it' ? 'Prodotto: ' : 'Product: '}</span>
+                              <code>{listPreview(outputs, locale, 3)}</code>
+                            </div>
+                          )}
+                          {inputs.length > 0 && (
+                            <div className='md:col-span-2'>
+                              <span className='text-muted-foreground'>{locale === 'it' ? 'Componenti: ' : 'Components: '}</span>
+                              <code>{listPreview(inputs, locale, 3)}</code>
+                            </div>
+                          )}
+                          {qty.length > 0 && (
+                            <div className='md:col-span-2'>
+                              <span className='text-muted-foreground'>{locale === 'it' ? 'Materiali: ' : 'Materials: '}</span>
+                              <code>{qtyPreview(qty, locale, 3)}</code>
+                            </div>
+                          )}
+                          {qOut.length > 0 && (
+                            <div className='md:col-span-2'>
+                              <span className='text-muted-foreground'>{locale === 'it' ? 'Quantità prodotta: ' : 'Produced quantity: '}</span>
+                              <code>{qtyPreview(qOut, locale, 3)}</code>
+                            </div>
+                          )}
+                          {qIn.length > 0 && (
+                            <div className='md:col-span-2'>
+                              <span className='text-muted-foreground'>{locale === 'it' ? 'Quantità componenti: ' : 'Component quantities: '}</span>
+                              <code>{qtyPreview(qIn, locale, 3)}</code>
+                            </div>
+                          )}
+                          {(supplierName || materialDoc || materialExpiry) && (
+                            <div className='md:col-span-2'>
+                              <span className='text-muted-foreground'>{locale === 'it' ? 'Dettagli: ' : 'Details: '}</span>
+                              <span className='font-mono'>
+                                {[
+                                  supplierName ? `${locale === 'it' ? 'Fornitore' : 'Supplier'}: ${supplierName}` : '',
+                                  materialDoc ? `${locale === 'it' ? 'Doc' : 'Doc'}: ${materialDoc}` : '',
+                                  materialExpiry ? `${locale === 'it' ? 'Scadenza' : 'Expiry'}: ${materialExpiry}` : '',
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ') || '—'}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {isOpen ? (
+                        <div className='space-y-2'>
+                          {Array.isArray(e.evidence) && e.evidence.length > 0 ? (
+                            <div className='flex flex-wrap gap-2'>
+                              {e.evidence.slice(0, 10).map((l, i) => (
+                                <Button asChild key={`milestone-evidence-${e.id}-${i}`} type='button' size='sm' variant='outline'>
+                                  <Link href={l.href} target='_blank' rel='noreferrer'>
+                                    {l.label ? String(l.label) : locale === 'it' ? 'Documento' : 'Document'}
+                                  </Link>
+                                </Button>
+                              ))}
+                            </div>
+                          ) : null}
+                          <details className='text-xs'>
+                            <summary className='cursor-pointer text-muted-foreground'>
+                              {locale === 'it' ? 'Dettagli tecnici' : 'Technical details'}
+                            </summary>
+                            <pre className='mt-2 whitespace-pre-wrap font-mono text-[11px]'>{JSON.stringify(raw, null, 2)}</pre>
+                          </details>
+                        </div>
+                      ) : (
+                        <div className='text-xs text-muted-foreground'>
+                          {locale === 'it' ? 'Clicca sul punto per espandere.' : 'Click the dot to expand.'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function RenderPassportClient(props: { data: PassportRenderData }) {
   const { data } = props;
   const locale: Locale = ((data as any)?.__demoLocale === 'it' ? 'it' : 'en') as Locale;
@@ -234,6 +527,41 @@ export default function RenderPassportClient(props: { data: PassportRenderData }
 
   const components = useMemo(() => collectComponentsFromDtes(data.dtes || []), [data.dtes]);
   const evidenceLinks = useMemo(() => collectEvidenceFromDtes(data.dtes || []), [data.dtes]);
+
+  const historyPoints = useMemo((): HistoryPoint[] => {
+    const out: HistoryPoint[] = [];
+    for (const dte of data.dtes || []) {
+      const recordCid = String(dte.cid || '').trim();
+      const recordHref = String(dte.href || '').trim() || '#';
+      for (let i = 0; i < (dte.events || []).length; i++) {
+        const ev = dte.events[i];
+        const raw = ev.raw || {};
+        const eventTime = String(ev.eventTime || raw.eventTime || '').trim() || undefined;
+        const ts = eventTime ? parseEventTimeMs(eventTime) ?? undefined : undefined;
+        out.push({
+          id: `${recordCid}::${i}`,
+          recordCid,
+          recordHref,
+          issuerName: String(dte.issuerName || '').trim() || recordCid,
+          preview: !!dte.preview,
+          eventType: ev.eventType,
+          eventTime,
+          ts,
+          kind: classifyHistoryEvent(ev.eventType, raw),
+          summary: ev.summary,
+          evidence: Array.isArray(ev.evidence) ? ev.evidence : [],
+          raw,
+        });
+      }
+    }
+    out.sort((a, b) => {
+      const ta = typeof a.ts === 'number' ? a.ts : Number.POSITIVE_INFINITY;
+      const tb = typeof b.ts === 'number' ? b.ts : Number.POSITIVE_INFINITY;
+      if (ta !== tb) return ta - tb;
+      return a.id.localeCompare(b.id);
+    });
+    return out;
+  }, [data.dtes]);
 
   const annexPublic = useMemo(() => {
     return (data.dpp as any)?.annexIII?.public || (data.dpp as any)?.annexIII || {};
@@ -269,16 +597,17 @@ export default function RenderPassportClient(props: { data: PassportRenderData }
         const raw = ev.raw || {};
         const dateTime = formatIsoMinute(String(ev.eventTime || raw.eventTime || ''));
         const process = String(raw.processType || raw.bizStep || '').trim() || undefined;
-        const docsCount =
-          (Array.isArray(ev.evidence) ? ev.evidence.length : 0) +
-          (Array.isArray(raw.supportingDocuments) ? raw.supportingDocuments.length : 0);
+	        const docsCount =
+	          (Array.isArray(ev.evidence) ? ev.evidence.length : 0) +
+	          (Array.isArray(raw.supportingDocuments) ? raw.supportingDocuments.length : 0);
 
-        const eventLabel = friendlyEventLabel(kv(ev.eventType), locale);
+	        const eventLabel = eventLabelForDisplay(ev.eventType, raw, locale);
 
-        const outQty = Array.isArray(raw.outputQuantityList) ? raw.outputQuantityList : [];
-        const inQty = Array.isArray(raw.inputQuantityList) ? raw.inputQuantityList : [];
-        const outEpc = Array.isArray(raw.outputEPCList) ? raw.outputEPCList : [];
-        const inEpc = Array.isArray(raw.inputEPCList) ? raw.inputEPCList : [];
+	        const outQty = Array.isArray(raw.outputQuantityList) ? raw.outputQuantityList : [];
+	        const inQty = Array.isArray(raw.inputQuantityList) ? raw.inputQuantityList : [];
+	        const qty = Array.isArray(raw.quantityList) ? raw.quantityList : [];
+	        const outEpc = Array.isArray(raw.outputEPCList) ? raw.outputEPCList : [];
+	        const inEpc = Array.isArray(raw.inputEPCList) ? raw.inputEPCList : [];
 
         const pushQty = (q: any, sign: '+' | '−') => {
           const pid = String(q?.productId || '').trim();
@@ -309,11 +638,12 @@ export default function RenderPassportClient(props: { data: PassportRenderData }
           });
         };
 
-        if (outQty.length > 0 || inQty.length > 0) {
-          for (const q of outQty) pushQty(q, '+');
-          for (const q of inQty) pushQty(q, '−');
-          continue;
-        }
+	        if (outQty.length > 0 || inQty.length > 0 || qty.length > 0) {
+	          for (const q of outQty) pushQty(q, '+');
+	          for (const q of inQty) pushQty(q, '−');
+	          for (const q of qty) pushQty(q, '+');
+	          continue;
+	        }
 
         const pushItem = (it: any, sign: '+' | '−') => {
           const pid = String(it?.id || it || '').trim();
@@ -1089,151 +1419,23 @@ export default function RenderPassportClient(props: { data: PassportRenderData }
                   : 'No history events are available for this product yet.'}
               </CardContent>
             </Card>
-          ) : (
-            (data.dtes || []).map((d) => (
-              <Card key={d.cid}>
-                <CardHeader className='space-y-1'>
-                  <div className='flex items-start justify-between gap-3'>
-	                    <div>
-	                      <CardTitle>{locale === 'it' ? 'Registro evento' : 'Event record'}</CardTitle>
-	                      <div className='text-xs text-muted-foreground'>
-	                        {d.preview
-	                          ? (locale === 'it' ? 'Anteprima (non pubblicato)' : 'Preview (not published)')
-                          : (locale === 'it' ? 'Pubblicato' : 'Published')}{' '}
-                        · {d.issuerName}
-                      </div>
-                    </div>
-                    <details className='text-xs text-muted-foreground'>
-                      <summary className='cursor-pointer'>{locale === 'it' ? 'Dettagli' : 'Details'}</summary>
-                      <div className='mt-2 space-y-2'>
-                        <div>
-                          <span className='text-muted-foreground'>{locale === 'it' ? 'ID record: ' : 'Record ID: '}</span>
-                          <code>{d.cid}</code>
-                        </div>
-                        <Button asChild type='button' variant='outline' size='sm'>
-                          <Link href={d.href} target='_blank' rel='noreferrer'>
-                            {locale === 'it' ? 'Apri record firmato' : 'Open signed record'}
-                          </Link>
-                        </Button>
-                      </div>
-                    </details>
-                  </div>
-                </CardHeader>
-                <CardContent className='space-y-3'>
-                  {d.events.length === 0 ? (
-                    <div className='text-sm text-muted-foreground'>
-                      {locale === 'it' ? 'Non è stato possibile leggere gli eventi di questo record.' : 'Unable to read events for this record.'}
-                    </div>
-                  ) : (
-                    <div className='space-y-3'>
-                      {d.events.slice(0, 50).map((ev, idx) => {
-                        const raw = ev.raw || {};
-                        const outputs = Array.isArray(raw?.outputEPCList) ? raw.outputEPCList : [];
-                        const inputs = Array.isArray(raw?.inputEPCList) ? raw.inputEPCList : [];
-                        const qIn = Array.isArray(raw?.inputQuantityList) ? raw.inputQuantityList : [];
-                        const qOut = Array.isArray(raw?.outputQuantityList) ? raw.outputQuantityList : [];
-                        const evidence = Array.isArray(ev.evidence) ? ev.evidence : [];
-
-	                        const listPreview = (list: any[], max = 3): string => {
-	                          const items = list
-                            .slice(0, max)
-                            .map((i: any) => {
-                              const id = String(i?.id || i || '').trim();
-                              const name = String(i?.name || '').trim();
-                              if (!id && !name) return '';
-                              return name ? `${id} (${name})` : id;
-                            })
-	                            .filter(Boolean);
-	                          if (items.length === 0) return '';
-	                          const more = list.length > max ? ` +${list.length - max} ${locale === 'it' ? 'altri' : 'more'}` : '';
-	                          return `${items.join(', ')}${more}`;
-	                        };
-
-	                        const qtyPreview = (list: any[], max = 3): string => {
-	                          const items = list
-                            .slice(0, max)
-                            .map((i: any) => {
-                              const pid = String(i?.productId || '').trim();
-                              const nm = String(i?.productName || '').trim();
-                              const qty = i?.quantity;
-                              const uom = String(i?.uom || '').trim();
-                              if (!pid) return '';
-                              const left = nm ? `${pid} (${nm})` : pid;
-                              const right = qty != null && uom ? `${qty} ${uom}` : qty != null ? String(qty) : '';
-                              return right ? `${left}: ${right}` : left;
-                            })
-	                            .filter(Boolean);
-	                          if (items.length === 0) return '';
-	                          const more = list.length > max ? ` +${list.length - max} ${locale === 'it' ? 'altri' : 'more'}` : '';
-	                          return `${items.join(', ')}${more}`;
-	                        };
-
-                        return (
-                          <div key={`${d.cid}::${idx}`} className='rounded-lg border p-3 space-y-2'>
-                            <div className='flex items-start justify-between gap-3'>
-                              <div>
-                                <div className='font-medium'>{friendlyEventLabel(kv(ev.eventType), locale)}</div>
-                                <div className='text-xs text-muted-foreground'>{kv(ev.eventTime)}</div>
-                              </div>
-                              <div className='text-xs text-muted-foreground'>#{idx + 1}</div>
-                            </div>
-
-                            <div className='grid grid-cols-1 md:grid-cols-2 gap-2 text-xs'>
-                              {outputs.length > 0 && (
-                                <div className='md:col-span-2'>
-                                  <span className='text-muted-foreground'>{locale === 'it' ? 'Prodotto: ' : 'Product: '}</span>
-                                  <code>{listPreview(outputs)}</code>
-                                </div>
-                              )}
-                              {inputs.length > 0 && (
-                                <div className='md:col-span-2'>
-                                  <span className='text-muted-foreground'>{locale === 'it' ? 'Componenti: ' : 'Components: '}</span>
-                                  <code>{listPreview(inputs)}</code>
-                                </div>
-                              )}
-                              {qOut.length > 0 && (
-                                <div className='md:col-span-2'>
-                                  <span className='text-muted-foreground'>{locale === 'it' ? 'Quantità prodotta: ' : 'Produced quantity: '}</span>
-                                  <code>{qtyPreview(qOut)}</code>
-                                </div>
-                              )}
-                              {qIn.length > 0 && (
-                                <div className='md:col-span-2'>
-                                  <span className='text-muted-foreground'>{locale === 'it' ? 'Quantità componenti: ' : 'Component quantities: '}</span>
-                                  <code>{qtyPreview(qIn)}</code>
-                                </div>
-                              )}
-                            </div>
-
-                            {evidence.length > 0 && (
-                              <div className='flex flex-wrap gap-2 pt-1'>
-                                {evidence.slice(0, 8).map((l, i) => (
-                                  <Button asChild key={`evidence-${d.cid}-${idx}-${i}`} type='button' size='sm' variant='outline'>
-                                    <Link href={l.href} target='_blank' rel='noreferrer'>
-                                      {l.label ? String(l.label) : (locale === 'it' ? 'Documento' : 'Document')}
-                                    </Link>
-                                  </Button>
-                                ))}
-                              </div>
-                            )}
-
-                            <details className='text-xs'>
-                              <summary className='cursor-pointer text-muted-foreground'>
-                                {locale === 'it' ? 'Dettagli tecnici' : 'Technical details'}
-                              </summary>
-                              <pre className='mt-2 whitespace-pre-wrap font-mono text-[11px]'>{JSON.stringify(raw, null, 2)}</pre>
-                            </details>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </div>
-      )}
+	          ) : (
+	            <Card>
+	              <CardHeader className='space-y-2'>
+	                <CardTitle>{locale === 'it' ? 'Timeline di tracciabilità' : 'Traceability timeline'}</CardTitle>
+	                <div className='text-xs text-muted-foreground'>
+	                  {locale === 'it'
+	                    ? 'Visualizzazione temporale degli eventi (entrata merci, produzione, ecc.).'
+	                    : 'Time-based view of events (goods receipt, production, etc.).'}
+	                </div>
+	              </CardHeader>
+	              <CardContent>
+	                <MilestoneTimeline events={historyPoints} locale={locale} />
+	              </CardContent>
+	            </Card>
+	          )}
+	        </div>
+	      )}
 
       {tab === 'trace' && (
         <Card>
